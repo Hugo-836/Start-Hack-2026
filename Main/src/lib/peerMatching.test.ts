@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildPeerSuggestions } from "@/lib/peerMatching";
 
 describe("buildPeerSuggestions", () => {
-  it("ranks peers higher when fields, skills and project keywords overlap", () => {
+  it("only suggests students with the same degree and scores university, skills, objectives and fields", () => {
     const suggestions = buildPeerSuggestions({
       currentStudentId: "student-1",
       students: [
@@ -46,11 +46,11 @@ describe("buildPeerSuggestions", () => {
           email: "cara@example.com",
           degree: "bsc",
           study_program_id: null,
-          university_id: "eth",
-          skills: ["marketing"],
+          university_id: "unisg",
+          skills: ["python", "nlp"],
           about: null,
-          objectives: ["industry_access"],
-          field_ids: ["field-business"],
+          objectives: ["topic"],
+          field_ids: ["field-ai"],
           created_at: "2026-03-18T00:00:00Z",
           updated_at: "2026-03-18T00:00:00Z",
         },
@@ -95,8 +95,8 @@ describe("buildPeerSuggestions", () => {
 
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0].student.id).toBe("student-2");
-    expect(suggestions[0].score).toBeGreaterThan(50);
+    expect(suggestions[0].score).toBe(50);
     expect(suggestions[0].sharedTopics).toContain("artificial intelligence");
-    expect(suggestions[0].matchReason).toContain("Shared field focus");
+    expect(suggestions[0].matchReason).toContain("Same degree");
   });
 });

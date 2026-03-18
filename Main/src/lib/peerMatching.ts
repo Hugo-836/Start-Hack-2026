@@ -11,32 +11,6 @@ export type PeerSuggestion = {
   matchReason: string;
 };
 
-const STOP_WORDS = new Set([
-  "a",
-  "an",
-  "and",
-  "are",
-  "as",
-  "at",
-  "be",
-  "by",
-  "for",
-  "from",
-  "how",
-  "in",
-  "into",
-  "is",
-  "of",
-  "on",
-  "or",
-  "that",
-  "the",
-  "their",
-  "this",
-  "to",
-  "with",
-]);
-
 function unique(values: string[]) {
   return [...new Set(values.filter(Boolean))];
 }
@@ -50,21 +24,9 @@ function intersect(valuesA: string[] = [], valuesB: string[] = []) {
   return unique(valuesA.map(normalize).filter((value) => right.has(value)));
 }
 
-function extractKeywords(text?: string | null) {
-  return unique(
-    normalize(text)
-      .split(/[^a-z0-9]+/i)
-      .filter((token) => token.length > 2 && !STOP_WORDS.has(token)),
-  );
-}
-
-function getProjectsForStudent(projects: ThesisProject[], studentId: string) {
-  return projects.filter((project) => project.student_id === studentId);
-}
-
 function formatFieldNames(fieldIds: string[], fieldMap: Map<string, string>) {
   return fieldIds
-    .map((fieldId) => fieldMap.get(fieldId))
+    .map((fieldId) => fieldMap.get(fieldId) || fieldId)
     .filter((fieldName): fieldName is string => Boolean(fieldName));
 }
 
@@ -75,7 +37,7 @@ export function buildPeerSuggestions(args: {
   fields?: Field[];
   limit?: number;
 }): PeerSuggestion[] {
-  const { currentStudentId, students, projects, fields = [], limit = 3 } = args;
+  const { currentStudentId, students, projects: _projects, fields = [], limit = 3 } = args;
   const currentStudent = students.find((student) => student.id === currentStudentId);
 
   if (!currentStudent) {
@@ -83,52 +45,47 @@ export function buildPeerSuggestions(args: {
   }
 
   const fieldMap = new Map(fields.map((field) => [field.id, field.name]));
-  const currentProjects = getProjectsForStudent(projects, currentStudentId);
   const currentFieldNames = formatFieldNames(currentStudent.field_ids, fieldMap);
-  const currentProjectKeywords = unique(
-    currentProjects.flatMap((project) => extractKeywords(`${project.title} ${project.description || ""}`)),
-  );
 
   return students
-    .filter((student) => student.id !== currentStudentId)
+    .filter(
+      (student) =>
+        student.id !== currentStudentId && student.degree === currentStudent.degree,
+    )
     .map((student) => {
-      const candidateProjects = getProjectsForStudent(projects, student.id);
       const sharedSkills = intersect(currentStudent.skills, student.skills);
       const sharedObjectives = intersect(currentStudent.objectives, student.objectives);
       const sharedFieldNames = intersect(
         currentFieldNames,
         formatFieldNames(student.field_ids, fieldMap),
       );
-      const candidateProjectKeywords = unique(
-        candidateProjects.flatMap((project) => extractKeywords(`${project.title} ${project.description || ""}`)),
-      );
-      const sharedProjectKeywords = intersect(currentProjectKeywords, candidateProjectKeywords);
+      const sameUniversity =
+        Boolean(currentStudent.university_id) &&
+        currentStudent.university_id === student.university_id;
 
       let score = 0;
-      if (sharedFieldNames.length) score += 35;
-      if (sharedSkills.length) score += Math.min(25, sharedSkills.length * 8);
-      if (sharedObjectives.length) score += Math.min(15, sharedObjectives.length * 7);
-      if (sharedProjectKeywords.length) score += Math.min(20, sharedProjectKeywords.length * 5);
-      if (currentStudent.degree === student.degree) score += 5;
-      if (currentStudent.university_id && currentStudent.university_id === student.university_id) score += 5;
+      if (sharedFieldNames.length) score += Math.min(40, sharedFieldNames.length * 20);
+      if (sharedSkills.length) score += Math.min(30, sharedSkills.length * 10);
+      if (sharedObjectives.length) score += Math.min(20, sharedObjectives.length * 10);
+      if (sameUniversity) score += 10;
 
       const sharedTopics = unique([
         ...sharedFieldNames,
         ...sharedSkills,
-        ...sharedProjectKeywords,
+        ...sharedObjectives,
       ]).slice(0, 4);
 
-      let matchReason = "Complementary academic profile.";
-      if (sharedFieldNames.length && sharedProjectKeywords.length) {
-        matchReason = `Shared field focus in ${sharedFieldNames[0]} and overlapping thesis keywords like ${sharedProjectKeywords[0]}.`;
+      let matchReason = "Same degree with a partially overlapping academic profile.";
+      if (sharedFieldNames.length && sharedSkills.length && sameUniversity) {
+        matchReason = `Same degree, same university, and strong overlap in ${sharedFieldNames[0]} with shared skills like ${sharedSkills[0]}.`;
       } else if (sharedFieldNames.length) {
-        matchReason = `Both of you work in ${sharedFieldNames.slice(0, 2).join(" / ")}.`;
+        matchReason = `Same degree and both of you work in ${sharedFieldNames.slice(0, 2).join(" / ")}.`;
       } else if (sharedSkills.length) {
-        matchReason = `Strong skill overlap around ${sharedSkills.slice(0, 2).join(" and ")}.`;
+        matchReason = `Same degree with strong skill overlap around ${sharedSkills.slice(0, 2).join(" and ")}.`;
       } else if (sharedObjectives.length) {
-        matchReason = `You share the same thesis objectives: ${sharedObjectives.slice(0, 2).join(" and ")}.`;
-      } else if (sharedProjectKeywords.length) {
-        matchReason = `Your thesis descriptions use similar themes such as ${sharedProjectKeywords.slice(0, 2).join(" and ")}.`;
+        matchReason = `Same degree and shared objectives such as ${sharedObjectives.slice(0, 2).join(" and ")}.`;
+      } else if (sameUniversity) {
+        matchReason = "Same degree and same university.";
       }
 
       return {
