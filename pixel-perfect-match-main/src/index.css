@@ -1,0 +1,151 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --radius: 0.625rem;
+    --background: 0 0% 100%;
+    --foreground: 0 0% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 0 0% 13%;
+    --primary-foreground: 0 0% 97%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 13%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 13%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 91%;
+    --input: 0 0% 91%;
+    --ring: 0 0% 64%;
+    --chart-1: 30 80% 55%;
+    --chart-2: 180 40% 45%;
+    --chart-3: 220 30% 35%;
+    --chart-4: 50 70% 55%;
+    --chart-5: 20 70% 50%;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 0 0% 10%;
+    --sidebar-primary: 0 0% 13%;
+    --sidebar-primary-foreground: 0 0% 97%;
+    --sidebar-accent: 0 0% 96%;
+    --sidebar-accent-foreground: 0 0% 13%;
+    --sidebar-border: 0 0% 91%;
+    --sidebar-ring: 0 0% 64%;
+
+    /* AI accent colors */
+    --ai-from: 270 60% 55%;
+    --ai-via: 220 70% 50%;
+    --ai-to: 210 65% 55%;
+  }
+
+  .dark {
+    --background: 0 0% 9%;
+    --foreground: 0 0% 97%;
+    --card: 0 0% 13%;
+    --card-foreground: 0 0% 97%;
+    --popover: 0 0% 13%;
+    --popover-foreground: 0 0% 97%;
+    --primary: 0 0% 91%;
+    --primary-foreground: 0 0% 13%;
+    --secondary: 0 0% 17%;
+    --secondary-foreground: 0 0% 97%;
+    --muted: 0 0% 17%;
+    --muted-foreground: 0 0% 64%;
+    --accent: 0 0% 17%;
+    --accent-foreground: 0 0% 97%;
+    --destructive: 0 70% 60%;
+    --destructive-foreground: 0 0% 97%;
+    --border: 0 0% 20%;
+    --input: 0 0% 22%;
+    --ring: 0 0% 45%;
+    --chart-1: 250 60% 55%;
+    --chart-2: 160 45% 50%;
+    --chart-3: 40 65% 55%;
+    --chart-4: 280 55% 55%;
+    --chart-5: 10 65% 55%;
+
+    --sidebar-background: 0 0% 9%;
+    --sidebar-foreground: 0 0% 97%;
+    --sidebar-primary: 250 60% 55%;
+    --sidebar-primary-foreground: 0 0% 97%;
+    --sidebar-accent: 0 0% 17%;
+    --sidebar-accent-foreground: 0 0% 97%;
+    --sidebar-border: 0 0% 20%;
+    --sidebar-ring: 0 0% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Avenir Next", -apple-system, BlinkMacSystemFont, "Segoe UI",
+      Roboto, Helvetica, Arial, sans-serif;
+  }
+}
+
+/* AI accent utilities */
+@layer utilities {
+  .text-ai {
+    @apply text-transparent bg-gradient-to-r from-purple-500 via-blue-700 to-blue-500 bg-clip-text;
+  }
+
+  .bg-ai {
+    @apply bg-gradient-to-r from-purple-700 via-blue-600 to-purple-700 text-white;
+  }
+
+  .text-ai-solid {
+    @apply text-blue-600;
+  }
+
+  .border-ai {
+    @apply border-blue-200;
+  }
+}
+
+/* Studyond type scale */
+.ds-caption { font-size: 12px; font-weight: 400; line-height: 16px; }
+.ds-badge { font-size: 12px; font-weight: 500; line-height: 16px; }
+.ds-label { font-size: 14px; font-weight: 500; line-height: 20px; }
+.ds-small { font-size: 14px; font-weight: 400; line-height: 20px; }
+.ds-body { font-size: 16px; font-weight: 400; line-height: 24px; }
+.ds-title-cards { font-size: 18px; font-weight: 500; line-height: 24px; }
+.ds-title-sm { font-size: 20px; font-weight: 500; line-height: 28px; }
+.ds-title-md { font-size: 24px; font-weight: 500; line-height: 32px; }
+.ds-title-lg { font-size: 30px; font-weight: 500; line-height: 36px; }
+.ds-title-xl { font-size: 36px; font-weight: 500; line-height: 40px; }
+
+/* Responsive headers */
+.header-xl { @apply text-2xl font-semibold tracking-tight sm:text-3xl lg:text-4xl; }
+.header-lg { @apply text-2xl font-semibold tracking-tight sm:text-2xl lg:text-3xl; }
+.header-md { @apply text-2xl font-semibold tracking-tight; }
+.header-sm { @apply text-base font-medium leading-tight tracking-tight sm:text-lg lg:text-xl; }
+
+/* Layout utilities */
+.grid-3-col {
+  @apply grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-3;
+}
+
+.grid-4-col {
+  @apply grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4;
+}
+
+.scroll-area {
+  @apply h-full w-full px-6 lg:px-8;
+}
+
+.scroll-area-content {
+  @apply pt-4 pb-8;
+}
+
+.ds-layout-narrow { @apply md:max-w-3xl; }
