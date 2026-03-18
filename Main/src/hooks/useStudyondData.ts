@@ -131,3 +131,14 @@ export function useTopics() {
     },
   });
 }
+
+export function useFields() {
+  return useQuery({
+    queryKey: ["fields"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("fields").select("*");
+      if (error) throw error;
+      return data;
+    },
+  });
+}
