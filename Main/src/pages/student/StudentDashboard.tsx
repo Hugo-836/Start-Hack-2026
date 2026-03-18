@@ -2,9 +2,9 @@ import { useThesisProjects, useStudents, useProgressMilestones } from "@/hooks/u
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BookOpen, Clock, Milestone, Sparkles, ArrowRight } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-
-const DEMO_STUDENT = "student-01";
+import { DEMO_STUDENT, getInteractiveMilestoneCount, INTERACTIVE_MILESTONES_EVENT } from "@/lib/interactiveMilestones";
 
 const stateLabels: Record<string, string> = {
   proposed: "Proposed", applied: "Applied", withdrawn: "Withdrawn", rejected: "Rejected",
@@ -21,10 +21,27 @@ export default function StudentDashboard() {
   const { data: projects } = useThesisProjects();
   const { data: students } = useStudents();
   const { data: milestones } = useProgressMilestones(DEMO_STUDENT);
+  const [milestoneCount, setMilestoneCount] = useState(0);
 
   const student = students?.find((s: any) => s.id === DEMO_STUDENT);
   const studentProjects = projects?.filter((p: any) => p.student_id === DEMO_STUDENT) || [];
   const activeProject = studentProjects.find((p: any) => p.state === "in_progress" || p.state === "agreed") || studentProjects[0];
+
+  useEffect(() => {
+    setMilestoneCount(getInteractiveMilestoneCount(milestones));
+  }, [milestones]);
+
+  useEffect(() => {
+    const syncMilestones = () => setMilestoneCount(getInteractiveMilestoneCount(milestones));
+
+    window.addEventListener(INTERACTIVE_MILESTONES_EVENT, syncMilestones);
+    window.addEventListener("focus", syncMilestones);
+
+    return () => {
+      window.removeEventListener(INTERACTIVE_MILESTONES_EVENT, syncMilestones);
+      window.removeEventListener("focus", syncMilestones);
+    };
+  }, [milestones]);
 
   return (
     <div className="space-y-8 max-w-5xl">
@@ -34,7 +51,7 @@ export default function StudentDashboard() {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="border shadow-none hover:shadow-md transition-shadow duration-300"><CardContent className="pt-6"><div className="flex items-center gap-3"><div className="rounded-full bg-secondary p-2"><BookOpen className="h-4 w-4 text-foreground" /></div><div><p className="ds-caption text-muted-foreground">Projects</p><p className="ds-title-cards">{studentProjects.length}</p></div></div></CardContent></Card>
-        <Card className="border shadow-none hover:shadow-md transition-shadow duration-300"><CardContent className="pt-6"><div className="flex items-center gap-3"><div className="rounded-full bg-secondary p-2"><Milestone className="h-4 w-4 text-foreground" /></div><div><p className="ds-caption text-muted-foreground">Milestones</p><p className="ds-title-cards">{milestones?.length || 0}</p></div></div></CardContent></Card>
+        <Card className="border shadow-none hover:shadow-md transition-shadow duration-300"><CardContent className="pt-6"><div className="flex items-center gap-3"><div className="rounded-full bg-secondary p-2"><Milestone className="h-4 w-4 text-foreground" /></div><div><p className="ds-caption text-muted-foreground">Milestones</p><p className="ds-title-cards">{milestoneCount}</p></div></div></CardContent></Card>
         <Card className="border shadow-none hover:shadow-md transition-shadow duration-300"><CardContent className="pt-6"><div className="flex items-center gap-3"><div className="rounded-full bg-secondary p-2"><Clock className="h-4 w-4 text-foreground" /></div><div><p className="ds-caption text-muted-foreground">Phase</p><p className="ds-title-cards capitalize">{activeProject?.state ? stateLabels[activeProject.state] : "—"}</p></div></div></CardContent></Card>
       </div>
       {activeProject && (
