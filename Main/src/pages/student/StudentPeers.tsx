@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Users, Sparkles } from "lucide-react";
 import { buildPeerSuggestions } from "@/lib/peerMatching";
 
-const DEMO_STUDENT = "student-04";
+const DEMO_STUDENT = "student-03";
 const statusLabels: Record<string, string> = { suggested: "Suggested", accepted: "Accepted", declined: "Declined" };
 const statusColors: Record<string, string> = { suggested: "bg-blue-100 text-blue-800", accepted: "bg-emerald-100 text-emerald-800", declined: "bg-muted text-muted-foreground" };
 
