@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { BookOpen, Clock, Milestone, Sparkles, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 
-const DEMO_STUDENT = "student-04";
+const DEMO_STUDENT = "student-01";
 
 const stateLabels: Record<string, string> = {
   proposed: "Proposed", applied: "Applied", withdrawn: "Withdrawn", rejected: "Rejected",
