@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Users, Sparkles, GraduationCap, Brain, Mail, Send, UserRoundSearch } from "lucide-react";
+import { Users, Sparkles, GraduationCap, Brain, Mail, Send, UserRoundSearch, CheckCircle2 } from "lucide-react";
 import { buildPeerSuggestions } from "@/lib/peerMatching";
 import { DEMO_STUDENT, getInteractiveStudentWorkspace } from "@/lib/interactiveMilestones";
 
@@ -36,6 +36,15 @@ function formatPercent(value: number | null | undefined) {
   return typeof value === "number" ? `${value}%` : null;
 }
 
+function buildMailtoLink(email: string, subject: string, body: string) {
+  const params = new URLSearchParams({
+    subject,
+    body,
+  });
+
+  return `mailto:${email}?${params.toString()}`;
+}
+
 function getPrimaryProject(projects: any[], studentId: string) {
   const studentProjects = projects.filter((project) => project.student_id === studentId);
   return (
@@ -50,7 +59,6 @@ export default function StudentPeers() {
   const [emailDraft, setEmailDraft] = useState<{ subject: string; body: string } | null>(null);
   const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
   const [selectedMentorId, setSelectedMentorId] = useState<string | null>(null);
-  const [mentorEmailDraft, setMentorEmailDraft] = useState<{ subject: string; body: string } | null>(null);
   const [isGeneratingMentorEmail, setIsGeneratingMentorEmail] = useState(false);
 
   const workspace = getInteractiveStudentWorkspace(DEMO_STUDENT);
@@ -102,6 +110,12 @@ export default function StudentPeers() {
     .filter((item) => item.match?.score)
     .sort((a, b) => (b.match?.score || 0) - (a.match?.score || 0))
     .slice(0, 3);
+  const prioritizedMentorSuggestions = selectedMentorId
+    ? [
+        ...mentorSuggestions.filter((item) => item.mentor.id === selectedMentorId),
+        ...mentorSuggestions.filter((item) => item.mentor.id !== selectedMentorId),
+      ]
+    : mentorSuggestions;
 
   const suggestions =
     students && projects && fields
@@ -213,7 +227,6 @@ export default function StudentPeers() {
     setEmailDraft(null);
     setIsGeneratingEmail(false);
   };
-  const selectedMentor = mentorSuggestions.find((item) => item.mentor.id === selectedMentorId) || null;
 
   const openMentorEmailDialog = async (mentorId: string) => {
     if (!currentStudent || !currentProject || !mentors) return;
@@ -221,7 +234,6 @@ export default function StudentPeers() {
     if (!item) return;
 
     setSelectedMentorId(mentorId);
-    setMentorEmailDraft(null);
     setIsGeneratingMentorEmail(true);
 
     try {
@@ -248,22 +260,21 @@ export default function StudentPeers() {
       }
 
       const data = (await response.json()) as { subject: string; body: string };
-      setMentorEmailDraft(data);
+      window.location.href = buildMailtoLink(item.mentor.email, data.subject, data.body);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      setMentorEmailDraft({
+      const fallbackDraft = {
         subject: "Mentorship request regarding my thesis",
         body: `Hello ${item.mentor.full_name},\n\nI am currently working on my thesis and your expertise seems very relevant to my topic. I would be grateful for a short exchange if you are available.\n\nBest regards,\n${currentStudent.first_name} ${currentStudent.last_name}\n\nGeneration fallback: ${message}`,
-      });
+      };
+      window.location.href = buildMailtoLink(
+        item.mentor.email,
+        fallbackDraft.subject,
+        fallbackDraft.body,
+      );
     } finally {
       setIsGeneratingMentorEmail(false);
     }
-  };
-
-  const closeMentorEmailDialog = () => {
-    setSelectedMentorId(null);
-    setMentorEmailDraft(null);
-    setIsGeneratingMentorEmail(false);
   };
 
   return (
@@ -446,57 +457,92 @@ export default function StudentPeers() {
             <p className="text-muted-foreground">Loading...</p>
           ) : mentorSuggestions.length ? (
             <div className="space-y-4">
-              {mentorSuggestions.map(({ mentor, match }) => (
-                <Card key={mentor.id} className="border shadow-none hover:shadow-md transition-shadow duration-300">
-                  <CardContent className="pt-6 space-y-3">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center ds-label">
-                        {mentor.full_name
-                          .split(" ")
-                          .slice(0, 2)
-                          .map((part) => part[0])
-                          .join("")}
+              {prioritizedMentorSuggestions.map(({ mentor, match }) => {
+                const isPreferredMentor = selectedMentorId === mentor.id;
+                const hasPreferredMentor = Boolean(selectedMentorId);
+
+                return (
+                  <Card
+                    key={mentor.id}
+                    className={`border shadow-none transition-all duration-300 ${
+                      isPreferredMentor
+                        ? "border-ai/40 bg-ai/5 shadow-md"
+                        : hasPreferredMentor
+                          ? "opacity-45 grayscale"
+                          : "hover:shadow-md"
+                    }`}
+                  >
+                    <CardContent className="pt-6 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center ds-label">
+                            {mentor.full_name
+                              .split(" ")
+                              .slice(0, 2)
+                              .map((part) => part[0])
+                              .join("")}
+                          </div>
+                          <div>
+                            <p className="ds-label">{mentor.full_name}</p>
+                            <p className="ds-caption text-muted-foreground">
+                              {mentor.institution || "Independent mentor"}
+                            </p>
+                          </div>
+                        </div>
+                        {isPreferredMentor ? (
+                          <Badge className="border-0 bg-emerald-100 text-emerald-800">
+                            <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+                            Preferred
+                          </Badge>
+                        ) : null}
                       </div>
-                      <div>
-                        <p className="ds-label">{mentor.full_name}</p>
-                        <p className="ds-caption text-muted-foreground">
-                          {mentor.institution || "Independent mentor"}
-                        </p>
+
+                      <p className="ds-small text-muted-foreground">{match?.reason}</p>
+
+                      <div className="rounded-lg border border-ai/20 bg-ai/5 px-3 py-2">
+                        <div className="flex items-center gap-2 text-ai">
+                          <UserRoundSearch className="h-4 w-4" />
+                          <span className="ds-label">
+                            Mentor relevance {formatPercent(match?.score)}
+                          </span>
+                        </div>
+                        <p className="ds-small text-muted-foreground mt-1">{mentor.bio}</p>
                       </div>
-                    </div>
 
-                    <p className="ds-small text-muted-foreground">{match?.reason}</p>
-
-                    <div className="rounded-lg border border-ai/20 bg-ai/5 px-3 py-2">
-                      <div className="flex items-center gap-2 text-ai">
-                        <UserRoundSearch className="h-4 w-4" />
-                        <span className="ds-label">
-                          Mentor relevance {formatPercent(match?.score)}
-                        </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {mentor.expertise.map((topic) => (
+                          <Badge key={topic} variant="secondary" className="ds-badge">
+                            {topic}
+                          </Badge>
+                        ))}
                       </div>
-                      <p className="ds-small text-muted-foreground mt-1">{mentor.bio}</p>
-                    </div>
 
-                    <div className="flex flex-wrap gap-1.5">
-                      {mentor.expertise.map((topic) => (
-                        <Badge key={topic} variant="secondary" className="ds-badge">
-                          {topic}
-                        </Badge>
-                      ))}
-                    </div>
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => openMentorEmailDialog(mentor.id)}
-                    >
-                      <Mail className="h-4 w-4" />
-                      Generate mentor email
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
+                      {isPreferredMentor ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => openMentorEmailDialog(mentor.id)}
+                        >
+                          <Mail className="h-4 w-4" />
+                          Contact preferred mentor
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant={hasPreferredMentor ? "secondary" : "default"}
+                          className="w-full"
+                          onClick={() => openMentorEmailDialog(mentor.id)}
+                          disabled={isGeneratingMentorEmail}
+                        >
+                          <Mail className="h-4 w-4" />
+                          Select this mentor
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           ) : (
             <Card className="border shadow-none">
@@ -569,65 +615,6 @@ export default function StudentPeers() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(selectedMentorId)} onOpenChange={(open) => !open && closeMentorEmailDialog()}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>
-              AI email draft{selectedMentor ? ` for ${selectedMentor.mentor.full_name}` : ""}
-            </DialogTitle>
-            <DialogDescription>
-              This draft uses your thesis and the mentor expertise profile.
-            </DialogDescription>
-          </DialogHeader>
-
-          {isGeneratingMentorEmail ? (
-            <p className="text-sm text-muted-foreground">Generating email...</p>
-          ) : (
-            <div className="space-y-3">
-              <div className="space-y-2">
-                <p className="text-sm font-medium">Subject</p>
-                <Input
-                  value={mentorEmailDraft?.subject || ""}
-                  onChange={(event) =>
-                    setMentorEmailDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            subject: event.target.value,
-                          }
-                        : current,
-                    )
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm font-medium">Body</p>
-                <Textarea
-                  value={mentorEmailDraft?.body || ""}
-                  onChange={(event) =>
-                    setMentorEmailDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            body: event.target.value,
-                          }
-                        : current,
-                    )
-                  }
-                  className="min-h-[260px]"
-                />
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button type="button" onClick={closeMentorEmailDialog} disabled={isGeneratingMentorEmail}>
-              <Send className="h-4 w-4" />
-              Send
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
