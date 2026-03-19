@@ -42,10 +42,24 @@ type DiscoveryResponse = {
   }>;
   webLeads?: Array<{
     label?: string;
-    query?: string;
+    url?: string;
     source?: string;
   }>;
 };
+
+function normalizeUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+
+  try {
+    const parsed = new URL(withProtocol);
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
 
 export async function discoverDocumentsWithClaude(
   payload: DiscoveryPayload,
@@ -53,13 +67,15 @@ export async function discoverDocumentsWithClaude(
 ) {
   const prompt = [
     "You are Claude acting as a document discovery copilot inside Studyond.",
-    "Help a thesis student find relevant material across three sources: their own documents, peer documents, and public web leads.",
-    "Use only the provided query and provided context. Do not invent documents or requests.",
-    "Web leads are suggestions only. They should be good search directions or likely source families, not claims that you actually searched the web.",
+    "Help a thesis student find relevant material on the public internet only.",
+    "Do not recommend the student's own documents, peer documents, or internal requests in the result.",
+    "Use only the provided query and provided context to infer relevant public sites or pages.",
+    "Web leads must be direct public URLs, not search queries.",
     "Be concise and practical.",
     "Return valid JSON only with this exact shape:",
-    '{"answer":"...","ownMatches":[{"documentId":"...","reason":"..."}],"peerMatches":[{"documentId":"...","reason":"..."}],"requestMatches":[{"requestId":"...","reason":"..."}],"webLeads":[{"label":"...","query":"...","source":"..."}]}',
-    "Return at most 3 ownMatches, 3 peerMatches, 3 requestMatches, and 4 webLeads.",
+    '{"answer":"...","ownMatches":[{"documentId":"...","reason":"..."}],"peerMatches":[{"documentId":"...","reason":"..."}],"requestMatches":[{"requestId":"...","reason":"..."}],"webLeads":[{"label":"...","url":"...","source":"..."}]}',
+    'Always return empty arrays for "ownMatches", "peerMatches", and "requestMatches".',
+    "Return at most 4 webLeads.",
     "",
     "Student query:",
     payload.query,
@@ -104,11 +120,16 @@ export async function discoverDocumentsWithClaude(
       : [],
     webLeads: Array.isArray(parsed.webLeads)
       ? parsed.webLeads
-          .filter((item) => item.label && item.query)
+          .map((item) => ({
+            label: item.label,
+            url: typeof item.url === "string" ? normalizeUrl(item.url) : null,
+            source: typeof item.source === "string" ? item.source : "Web",
+          }))
+          .filter((item) => item.label && item.url)
           .map((item) => ({
             label: item.label as string,
-            query: item.query as string,
-            source: typeof item.source === "string" ? item.source : "Web",
+            url: item.url as string,
+            source: item.source,
           }))
       : [],
   };

@@ -138,15 +138,9 @@ export default function StudentSharedDocuments() {
   const { session } = useDemoAuth();
   const currentStudentId = session?.studentId;
   const [assistantQuery, setAssistantQuery] = useState("");
-  const [requestTitle, setRequestTitle] = useState("");
-  const [requestTheme, setRequestTheme] = useState("");
   const [requestKeywords, setRequestKeywords] = useState("");
-  const [requestDescription, setRequestDescription] = useState("");
   const [requestSearchParams, setRequestSearchParams] = useState<{
-    title: string;
-    theme: string;
     keywords: string;
-    description: string;
   } | null>(null);
   const [activeSearchRequestId, setActiveSearchRequestId] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState(() => getInteractiveStudentWorkspace(currentStudentId));
@@ -168,7 +162,7 @@ export default function StudentSharedDocuments() {
     ownMatches: Array<{ documentId: string; reason: string }>;
     peerMatches: Array<{ documentId: string; reason: string }>;
     requestMatches: Array<{ requestId: string; reason: string }>;
-    webLeads: Array<{ label: string; query: string; source: string }>;
+    webLeads: Array<{ label: string; url: string; source: string }>;
   } | null>(null);
 
   const syncSharedRequestsFromServer = async () => {
@@ -312,12 +306,9 @@ export default function StudentSharedDocuments() {
 
     const requestTokens = Array.from(
       new Set([
-        ...tokenizeSearchValue(requestSearchParams.title),
-        ...tokenizeSearchValue(requestSearchParams.theme),
         ...requestSearchParams.keywords
           .split(",")
           .flatMap((item) => tokenizeSearchValue(item)),
-        ...tokenizeSearchValue(requestSearchParams.description),
       ]),
     );
 
@@ -377,22 +368,11 @@ export default function StudentSharedDocuments() {
   useEffect(() => {
     if (!requestSearchParams) return;
 
-    if (
-      requestTitle !== requestSearchParams.title ||
-      requestTheme !== requestSearchParams.theme ||
-      requestKeywords !== requestSearchParams.keywords ||
-      requestDescription !== requestSearchParams.description
-    ) {
+    if (requestKeywords !== requestSearchParams.keywords) {
       setRequestSearchParams(null);
       setActiveSearchRequestId(null);
     }
-  }, [
-    requestDescription,
-    requestKeywords,
-    requestSearchParams,
-    requestTheme,
-    requestTitle,
-  ]);
+  }, [requestKeywords, requestSearchParams]);
 
   const documentRequests = useMemo(() => {
     return sharedRequests
@@ -519,20 +499,20 @@ export default function StudentSharedDocuments() {
   }, [documentRequests, explicitlyRequestedDocumentsByRequestId, student?.id]);
 
   const handleSearchRequestDocuments = () => {
-    if (!student?.id || !requestTitle.trim()) return;
+    if (!student?.id || !requestKeywords.trim()) return;
 
     const requestId = activeSearchRequestId || `shared-doc-request-${Date.now()}`;
     const existingRequest = sharedRequests.find((item) => item.id === requestId);
     const nextRequest = {
       id: requestId,
       student_id: student.id,
-      title: requestTitle.trim(),
-      theme: requestTheme.trim() || null,
+      title: requestKeywords.trim(),
+      theme: null,
       keywords: requestKeywords
         .split(",")
         .map((item) => item.trim())
         .filter(Boolean),
-      description: requestDescription.trim() || null,
+      description: null,
       created_at: existingRequest?.created_at || new Date().toISOString(),
       matched_documents: existingRequest?.matched_documents || [],
     };
@@ -544,10 +524,7 @@ export default function StudentSharedDocuments() {
     }
 
     setRequestSearchParams({
-      title: requestTitle,
-      theme: requestTheme,
       keywords: requestKeywords,
-      description: requestDescription,
     });
     setActiveSearchRequestId(requestId);
     const nextRequests = getInteractiveSharedDocumentRequests();
@@ -568,13 +545,13 @@ export default function StudentSharedDocuments() {
     const nextRequest = {
       id: requestId,
       student_id: student.id,
-      title: requestSearchParams.title.trim(),
-      theme: requestSearchParams.theme.trim() || null,
+      title: requestSearchParams.keywords.trim(),
+      theme: null,
       keywords: requestSearchParams.keywords
         .split(",")
         .map((item) => item.trim())
         .filter(Boolean),
-      description: requestSearchParams.description.trim() || null,
+      description: null,
       created_at: existingRequest?.created_at || new Date().toISOString(),
       matched_documents: [
         ...nextMatchedDocuments,
@@ -759,7 +736,7 @@ export default function StudentSharedDocuments() {
         ownMatches?: Array<{ documentId?: string; reason?: string }>;
         peerMatches?: Array<{ documentId?: string; reason?: string }>;
         requestMatches?: Array<{ requestId?: string; reason?: string }>;
-        webLeads?: Array<{ label?: string; query?: string; source?: string }>;
+        webLeads?: Array<{ label?: string; url?: string; source?: string }>;
       };
 
       setAssistantResult({
@@ -775,7 +752,7 @@ export default function StudentSharedDocuments() {
           : [],
         webLeads: Array.isArray(data.webLeads)
           ? data.webLeads
-              .filter((item): item is { label: string; query: string; source: string } => Boolean(item.label && item.query && item.source))
+              .filter((item): item is { label: string; url: string; source: string } => Boolean(item.label && item.url && item.source))
           : [],
       });
     } catch {
@@ -810,7 +787,7 @@ export default function StudentSharedDocuments() {
         <CardContent className="pt-6 space-y-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="ds-label text-ai">Shared library</p>
+              <p className="ds-title-cards">Shared library</p>
               <p className="ds-small text-muted-foreground mt-1">
                 Documents from students you are connected with as peers.
               </p>
@@ -923,76 +900,6 @@ export default function StudentSharedDocuments() {
             <div className="space-y-4 rounded-xl border border-ai/20 bg-background p-4">
               <p className="ds-body text-foreground">{assistantResult.answer}</p>
 
-              {assistantResult.ownMatches.length > 0 && (
-                <div className="space-y-2">
-                  <p className="ds-label text-ai">In your documents</p>
-                  {assistantResult.ownMatches.map((match) => {
-                    const document = currentStudentDocuments.find((item) => item.id === match.documentId);
-                    if (!document) return null;
-
-                    return (
-                      <div key={`own-${match.documentId}`} className="rounded-lg border border-ai/15 bg-ai/5 p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="ds-label">{document.displayTitle}</p>
-                            <p className="ds-caption mt-1 text-muted-foreground">{document.projectTitle}</p>
-                          </div>
-                          <a href={document.dataUrl} download={document.name} className="text-sm font-medium text-ai-solid hover:underline">
-                            Open
-                          </a>
-                        </div>
-                        <p className="ds-caption mt-2 text-muted-foreground">{match.reason}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {assistantResult.peerMatches.length > 0 && (
-                <div className="space-y-2">
-                  <p className="ds-label text-ai">In peer documents</p>
-                  {assistantResult.peerMatches.map((match) => {
-                    const document = peerDocuments.find((item) => item.id === match.documentId);
-                    if (!document) return null;
-
-                    return (
-                      <div key={`peer-${match.documentId}`} className="rounded-lg border border-ai/15 bg-ai/5 p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="ds-label">{document.displayTitle}</p>
-                            <p className="ds-caption mt-1 text-muted-foreground">
-                              {document.ownerName} · {document.projectTitle}
-                            </p>
-                          </div>
-                          <a href={document.dataUrl} download={document.name} className="text-sm font-medium text-ai-solid hover:underline">
-                            Open
-                          </a>
-                        </div>
-                        <p className="ds-caption mt-2 text-muted-foreground">{match.reason}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {assistantResult.requestMatches.length > 0 && (
-                <div className="space-y-2">
-                  <p className="ds-label text-ai">Relevant student requests</p>
-                  {assistantResult.requestMatches.map((match) => {
-                    const request = documentRequests.find((item) => item.id === match.requestId);
-                    if (!request) return null;
-
-                    return (
-                      <div key={`request-${match.requestId}`} className="rounded-lg border border-ai/15 bg-ai/5 p-3">
-                        <p className="ds-label">{request.title}</p>
-                        <p className="ds-caption mt-1 text-muted-foreground">Posted by {request.ownerName}</p>
-                        <p className="ds-caption mt-2 text-muted-foreground">{match.reason}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
               {assistantResult.webLeads.length > 0 && (
                 <div className="space-y-2">
                   <p className="ds-label text-ai">Web search leads</p>
@@ -1004,19 +911,25 @@ export default function StudentSharedDocuments() {
                           <p className="ds-caption mt-1 text-muted-foreground">{lead.source}</p>
                         </div>
                         <a
-                          href={`https://www.google.com/search?q=${encodeURIComponent(lead.query)}`}
+                          href={lead.url}
                           target="_blank"
                           rel="noreferrer"
                           className="text-sm font-medium text-ai-solid hover:underline"
                         >
-                          Search
+                          Open site
                         </a>
                       </div>
-                      <p className="ds-caption mt-2 text-muted-foreground">{lead.query}</p>
+                      <p className="ds-caption mt-2 text-muted-foreground">{lead.url}</p>
                     </div>
                   ))}
                 </div>
               )}
+
+              {assistantResult.webLeads.length === 0 ? (
+                <p className="ds-small text-muted-foreground">
+                  No public web lead found yet. Try a more specific query.
+                </p>
+              ) : null}
             </div>
           )}
         </CardContent>
@@ -1038,45 +951,19 @@ export default function StudentSharedDocuments() {
             </div>
 
             <div className="space-y-2">
-              <label className="ds-label">What document are you looking for?</label>
+              <label className="ds-label">Keywords</label>
               <Input
-                value={requestTitle}
-                onChange={(event) => setRequestTitle(event.target.value)}
-                placeholder='Example: "A strong literature review structure for HCI theses"'
+                value={requestKeywords}
+                onChange={(event) => setRequestKeywords(event.target.value)}
+                placeholder="Comma separated keywords"
               />
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className="ds-label">Theme</label>
-                <Input
-                  value={requestTheme}
-                  onChange={(event) => setRequestTheme(event.target.value)}
-                  placeholder="Example: AI ethics, UX research, data analysis"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="ds-label">Keywords</label>
-                <Input
-                  value={requestKeywords}
-                  onChange={(event) => setRequestKeywords(event.target.value)}
-                  placeholder="Comma separated keywords"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="ds-label">What would help most?</label>
-              <Textarea
-                rows={4}
-                value={requestDescription}
-                onChange={(event) => setRequestDescription(event.target.value)}
-                placeholder="Describe the kind of file, format, structure, or example you need."
-              />
+              <p className="ds-small text-muted-foreground">
+                Suggested documents are based only on these keywords.
+              </p>
             </div>
 
             <div className="flex justify-end">
-              <Button onClick={handleSearchRequestDocuments} disabled={!requestTitle.trim()}>
+              <Button onClick={handleSearchRequestDocuments} disabled={!requestKeywords.trim()}>
                 Search
               </Button>
             </div>
