@@ -1,3 +1,5 @@
+import { generateJsonWithClaude, parseClaudeJson } from "./claude";
+
 type StudentProfile = {
   id: string;
   first_name: string;
@@ -38,30 +40,21 @@ export type MentorMatch = {
   reason: string;
 };
 
-type OllamaGenerateResponse = {
-  response?: string;
-};
-
 function parseMatch(rawText: string): MentorMatch | null {
-  const candidates = [rawText, rawText.match(/```json\s*([\s\S]*?)```/i)?.[1] || ""];
-
-  for (const candidate of candidates) {
-    if (!candidate.trim()) continue;
-    try {
-      const parsed = JSON.parse(candidate);
-      if (parsed && typeof parsed.mentorId === "string") {
-        return {
-          mentorId: parsed.mentorId,
-          score: Math.max(0, Math.min(100, Math.round(Number(parsed.score) || 0))),
-          reason:
-            typeof parsed.reason === "string" && parsed.reason.trim()
-              ? parsed.reason.trim()
-              : "No explanation returned.",
-        };
-      }
-    } catch {
-      continue;
+  try {
+    const parsed = parseClaudeJson<MentorMatch>(rawText);
+    if (parsed && typeof parsed.mentorId === "string") {
+      return {
+        mentorId: parsed.mentorId,
+        score: Math.max(0, Math.min(100, Math.round(Number(parsed.score) || 0))),
+        reason:
+          typeof parsed.reason === "string" && parsed.reason.trim()
+            ? parsed.reason.trim()
+            : "No explanation returned.",
+      };
     }
+  } catch {
+    return null;
   }
 
   return null;
@@ -72,6 +65,7 @@ async function scoreOneMentor(
   currentProject: ThesisProject,
   mentor: MentorProfile,
   model: string,
+  apiKey: string,
 ) {
   const prompt = JSON.stringify({
     instructions: [
@@ -87,32 +81,23 @@ async function scoreOneMentor(
     mentor,
   });
 
-  const response = await fetch("http://127.0.0.1:11434/api/generate", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      stream: false,
-      format: "json",
-      prompt,
-    }),
+  const raw = await generateJsonWithClaude(prompt, {
+    apiKey,
+    model,
+    maxTokens: 400,
   });
-
-  if (!response.ok) {
-    throw new Error(`Ollama mentor matching failed with status ${response.status}`);
-  }
-
-  const data = (await response.json()) as OllamaGenerateResponse;
-  return parseMatch(data.response || "");
+  return parseMatch(raw);
 }
 
 export async function scoreMentorMatches(
   payload: MentorMatchingRequest,
-  options?: { ollamaModel?: string },
+  options?: { anthropicApiKey?: string; claudeModel?: string },
 ) {
-  const model = options?.ollamaModel || "qwen2.5:3b";
+  const model = options?.claudeModel || "claude-3-5-sonnet-latest";
+  const apiKey = options?.anthropicApiKey;
+  if (!apiKey) {
+    throw new Error("Missing ANTHROPIC_API_KEY in Main/.env");
+  }
   const matches: MentorMatch[] = [];
 
   for (const mentor of payload.mentors) {
@@ -121,6 +106,7 @@ export async function scoreMentorMatches(
       payload.currentProject,
       mentor,
       model,
+      apiKey,
     );
     if (match) matches.push(match);
   }

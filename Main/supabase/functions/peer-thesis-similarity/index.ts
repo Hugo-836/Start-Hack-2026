@@ -11,7 +11,7 @@ Deno.serve(async (req: Request) => {
   return Response.json(
     {
       error:
-        "This edge function is deprecated in this project. Thesis similarity is now computed locally via Ollama at /api/peer-thesis-similarity.",
+        "This edge function is deprecated in this project. Thesis similarity is now computed locally via Claude at /api/peer-thesis-similarity.",
     },
     { status: 410, headers: corsHeaders },
   );

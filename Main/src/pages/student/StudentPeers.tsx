@@ -118,17 +118,15 @@ export default function StudentPeers() {
           thesisSimilarityByStudentId: similarityMap,
         })
       : [];
-
   const thesisSimilarityDebug = similarityMap.__debug ?? null;
-
-  const ollamaScores = Object.entries(similarityMap).filter(
+  const claudeScores = Object.entries(similarityMap).filter(
     (entry): entry is [string, SimilarityEntry] => {
       const [studentId, value] = entry;
       return studentId !== "__debug" && typeof value?.score === "number";
     },
   );
 
-  const ollamaScoresByStudentId = ollamaScores.reduce<Record<string, SimilarityEntry>>(
+  const claudeScoresByStudentId = claudeScores.reduce<Record<string, SimilarityEntry>>(
     (acc, [studentId, value]) => {
       acc[studentId] = value;
       return acc;
@@ -147,14 +145,14 @@ export default function StudentPeers() {
           : thesisSimilarityError ?? null,
       hasData: thesisSimilarityByStudentId !== undefined,
     },
-    hasPositiveOllamaScores: ollamaScores.some(([, value]) => (value.score ?? 0) > 0),
+    hasPositiveClaudeScores: claudeScores.some(([, value]) => (value.score ?? 0) > 0),
     thesisSimilarityDebug,
-    ollamaScoresByStudentId,
+    claudeScoresByStudentId,
     topRecommendations: suggestions.slice(0, 3).map((suggestion) => ({
       studentId: suggestion.student.id,
       studentName: `${suggestion.student.first_name} ${suggestion.student.last_name}`,
-      ollamaRawScore: formatPercent(similarityMap[suggestion.student.id]?.score ?? null),
-      ollamaReason: similarityMap[suggestion.student.id]?.reason ?? null,
+      claudeRawScore: formatPercent(similarityMap[suggestion.student.id]?.score ?? null),
+      claudeReason: similarityMap[suggestion.student.id]?.reason ?? null,
       rankingThesisScore: formatPercent(suggestion.thesisSimilarityScore),
       finalMatchScore: formatPercent(suggestion.score),
     })),
@@ -284,7 +282,7 @@ export default function StudentPeers() {
 
       <Card className="border border-amber-300 bg-amber-50 shadow-none">
         <CardContent className="pt-6">
-          <p className="ds-label text-amber-900">Debug Ollama thesis scores</p>
+          <p className="ds-label text-amber-900">Debug Claude thesis scores</p>
           <pre className="mt-3 overflow-x-auto whitespace-pre-wrap text-xs text-amber-950">
             {JSON.stringify(debugPayload, null, 2)}
           </pre>
