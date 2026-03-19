@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowRight, BookOpen, Sparkles, Building2, Briefcase, FolderOpen, Send } from "lucide-react";
 import {
+  addInteractiveFeedbackSubmission,
   deleteInteractivePeerConnection,
   getInteractivePhaseState,
   getInteractivePeerConnections,
@@ -48,6 +49,7 @@ const milestoneStatusLabels: Record<string, string> = {
   completed: "Completed",
   overdue: "Overdue",
 };
+const MAX_WEEKLY_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
 type DashboardChatMessage = {
   role: "user" | "assistant";
@@ -69,9 +71,10 @@ export default function StudentDashboard() {
   const [workspace, setWorkspace] = useState(() =>
     getInteractiveStudentWorkspace(currentStudentId),
   );
-  const [monthlyOwlChecks] = useState(() =>
-    Array.from({ length: 4 }, () => Math.random() > 0.4),
-  );
+  const [monthlyOwlChecks, setMonthlyOwlChecks] = useState(() => [
+    ...Array.from({ length: 3 }, () => Math.random() > 0.4),
+    false,
+  ]);
   const [dashboardChatInput, setDashboardChatInput] = useState("");
   const [dashboardChatMessages, setDashboardChatMessages] = useState<DashboardChatMessage[]>([
     {
@@ -80,6 +83,7 @@ export default function StudentDashboard() {
     },
   ]);
   const [isDashboardChatLoading, setIsDashboardChatLoading] = useState(false);
+  const weeklyUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const {
     student,
@@ -325,6 +329,63 @@ export default function StudentDashboard() {
     }
   };
 
+  const handleWeeklyFileChange = (file: File | null) => {
+    if (!file) return;
+
+    if (file.size > MAX_WEEKLY_FILE_SIZE_BYTES) {
+      toast("File too large", {
+        description: "Please choose a file smaller than 5 MB.",
+      });
+      if (weeklyUploadInputRef.current) {
+        weeklyUploadInputRef.current.value = "";
+      }
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      if (!result) {
+        toast("Upload failed", {
+          description: "This file could not be added.",
+        });
+        return;
+      }
+
+      addInteractiveFeedbackSubmission({
+        id: `feedback-weekly-${Date.now()}`,
+        student_id: currentStudentId || "",
+        title: "Weekly report",
+        submission_text: `Weekly report submitted on ${new Date().toLocaleDateString("en-US")}.`,
+        file_name: file.name,
+        reviewer_feedback: null,
+        ai_summary: null,
+        status: "submitted",
+        reviewer_id: workspace.supervisors[0]?.id || null,
+        reviewer_type: "supervisor",
+      });
+      setMonthlyOwlChecks((current) =>
+        current.map((value, index) => (index === current.length - 1 ? true : value)),
+      );
+      setWorkspace(getInteractiveStudentWorkspace(currentStudentId));
+      toast("Weekly submission recorded", {
+        description: `"${file.name}" was submitted to Feedback as "Weekly report".`,
+      });
+
+      if (weeklyUploadInputRef.current) {
+        weeklyUploadInputRef.current.value = "";
+      }
+    };
+
+    reader.onerror = () => {
+      toast("Upload failed", {
+        description: "This file could not be added.",
+      });
+    };
+
+    reader.readAsDataURL(file);
+  };
+
   return (
     <div className="space-y-8 max-w-6xl">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -338,9 +399,22 @@ export default function StudentDashboard() {
         </div>
 
         <div className="inline-flex items-center gap-3 rounded-2xl border bg-secondary px-4 py-2 shrink-0">
+          <input
+            ref={weeklyUploadInputRef}
+            type="file"
+            className="hidden"
+            onChange={(event) => handleWeeklyFileChange(event.target.files?.[0] || null)}
+          />
           <div>
             <p className="ds-caption text-muted-foreground">Current month</p>
             <p className="ds-label">{currentMonthLabel}</p>
+            <button
+              type="button"
+              className="ds-caption mt-1 text-foreground underline-offset-2 hover:underline"
+              onClick={() => weeklyUploadInputRef.current?.click()}
+            >
+              Submit weekly report
+            </button>
           </div>
           <div className="flex items-center gap-2">
             {monthlyOwlChecks.map((didSubmit, index) => (
@@ -349,9 +423,13 @@ export default function StudentDashboard() {
                 className={`flex h-9 w-9 items-center justify-center rounded-full border text-sm ${
                   didSubmit
                     ? "border-emerald-200 bg-emerald-100"
-                    : "border-border bg-background text-muted-foreground"
+                    : index === monthlyOwlChecks.length - 1
+                      ? "border-amber-200 bg-amber-50 text-amber-700"
+                      : "border-border bg-background text-muted-foreground"
                 }`}
-                aria-label={`Week ${index + 1}: ${didSubmit ? "submitted" : "missed"}`}
+                aria-label={`Week ${index + 1}: ${
+                  didSubmit ? "submitted" : index === monthlyOwlChecks.length - 1 ? "current week pending" : "missed"
+                }`}
               >
                 <span className={didSubmit ? "text-xl leading-none" : "text-base leading-none"} aria-hidden="true">
                   {didSubmit ? "🦉" : "✕"}
