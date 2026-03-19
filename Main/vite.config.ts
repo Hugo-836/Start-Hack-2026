@@ -8,6 +8,8 @@ import { scoreMentorMatches } from "./server/mentorMatching";
 import { generateMentorIntroEmail } from "./server/mentorIntroEmail";
 import { buildThesisCommandCenter } from "./server/thesisCommandCenter";
 import { generateTaskAssistantReply } from "./server/taskAssistant";
+import { matchSharedDocumentsWithClaude } from "./server/sharedDocumentMatcher";
+import { discoverDocumentsWithClaude } from "./server/documentDiscoveryAssistant";
 
 function readBody(req: NodeJS.ReadableStream) {
   return new Promise<string>((resolve, reject) => {
@@ -161,6 +163,50 @@ export default defineConfig(({ mode }) => {
               res.statusCode = 200;
               res.setHeader("Content-Type", "application/json");
               res.end(JSON.stringify(reply));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "Unknown error";
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: message }));
+            }
+          });
+
+          server.middlewares.use("/api/shared-document-match", async (req: any, res: any, next: any) => {
+            if (req.method !== "POST") return next();
+
+            try {
+              const rawBody = await readBody(req);
+              const body = JSON.parse(rawBody);
+              const matches = await matchSharedDocumentsWithClaude(body, {
+                apiKey: env.ANTHROPIC_API_KEY,
+                model: env.ANTHROPIC_MODEL || env.CLAUDE_MODEL || "claude-sonnet-4-20250514",
+              });
+
+              res.statusCode = 200;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify(matches));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "Unknown error";
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: message }));
+            }
+          });
+
+          server.middlewares.use("/api/document-discovery-assistant", async (req: any, res: any, next: any) => {
+            if (req.method !== "POST") return next();
+
+            try {
+              const rawBody = await readBody(req);
+              const body = JSON.parse(rawBody);
+              const result = await discoverDocumentsWithClaude(body, {
+                apiKey: env.ANTHROPIC_API_KEY,
+                model: env.ANTHROPIC_MODEL || env.CLAUDE_MODEL || "claude-sonnet-4-20250514",
+              });
+
+              res.statusCode = 200;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify(result));
             } catch (error) {
               const message = error instanceof Error ? error.message : "Unknown error";
               res.statusCode = 500;

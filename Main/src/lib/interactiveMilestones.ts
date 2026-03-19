@@ -74,9 +74,20 @@ export type ProjectDocument = {
   created_at: string;
 };
 
+export type SharedDocumentRequest = {
+  id: string;
+  student_id: string;
+  title: string;
+  theme: string | null;
+  keywords: string[];
+  description: string | null;
+  created_at: string;
+};
+
 type WorkspaceState = {
   customFeedbacks: WorkspaceFeedback[];
   projectDocuments: ProjectDocument[];
+  sharedDocumentRequests: SharedDocumentRequest[];
 };
 
 type RemoteCache = {
@@ -605,12 +616,12 @@ export function getInteractiveMilestoneCount(milestones: any[] | undefined) {
 
 function loadInteractiveWorkspaceState(): WorkspaceState {
   if (typeof window === "undefined") {
-    return { customFeedbacks: [], projectDocuments: [] };
+    return { customFeedbacks: [], projectDocuments: [], sharedDocumentRequests: [] };
   }
 
   const rawState = window.localStorage.getItem(INTERACTIVE_WORKSPACE_STORAGE_KEY);
   if (!rawState) {
-    return { customFeedbacks: [], projectDocuments: [] };
+    return { customFeedbacks: [], projectDocuments: [], sharedDocumentRequests: [] };
   }
 
   try {
@@ -618,9 +629,10 @@ function loadInteractiveWorkspaceState(): WorkspaceState {
     return {
       customFeedbacks: Array.isArray(parsedState?.customFeedbacks) ? parsedState.customFeedbacks : [],
       projectDocuments: Array.isArray(parsedState?.projectDocuments) ? parsedState.projectDocuments : [],
+      sharedDocumentRequests: Array.isArray(parsedState?.sharedDocumentRequests) ? parsedState.sharedDocumentRequests : [],
     };
   } catch {
-    return { customFeedbacks: [], projectDocuments: [] };
+    return { customFeedbacks: [], projectDocuments: [], sharedDocumentRequests: [] };
   }
 }
 
@@ -781,6 +793,40 @@ export function getInteractiveStudentWorkspace(studentId = DEMO_STUDENT) {
     fields,
     mockMentors,
   };
+}
+
+export function getInteractiveProjectDocuments(studentId?: string) {
+  ensureRemoteDataLoaded();
+  const workspaceState = loadInteractiveWorkspaceState();
+  if (!studentId) {
+    return [...workspaceState.projectDocuments];
+  }
+
+  const preferredStudentId = getPreferredStudentId(studentId);
+  const projects = getInteractiveThesisProjects();
+
+  return workspaceState.projectDocuments.filter((item) =>
+    projects.some((project) => project.student_id === preferredStudentId && project.id === item.project_id),
+  );
+}
+
+export function getInteractiveSharedDocumentRequests(studentId?: string) {
+  ensureRemoteDataLoaded();
+  const workspaceState = loadInteractiveWorkspaceState();
+  if (!studentId) {
+    return [...workspaceState.sharedDocumentRequests];
+  }
+
+  const preferredStudentId = getPreferredStudentId(studentId);
+  return workspaceState.sharedDocumentRequests.filter((item) => item.student_id === preferredStudentId);
+}
+
+export function addInteractiveSharedDocumentRequest(request: SharedDocumentRequest) {
+  const workspaceState = loadInteractiveWorkspaceState();
+  saveInteractiveWorkspaceState({
+    ...workspaceState,
+    sharedDocumentRequests: [request, ...workspaceState.sharedDocumentRequests],
+  });
 }
 
 export function addInteractiveProjectDocument(document: ProjectDocument) {

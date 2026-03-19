@@ -11,10 +11,10 @@ import StudentMilestones from "./pages/student/StudentMilestones";
 import StudentFeedback from "./pages/student/StudentFeedback";
 import StudentPeers from "./pages/student/StudentPeers";
 import StudentSixtySeven from "./pages/student/StudentSixtySeven";
+import StudentSharedDocuments from "./pages/student/StudentSharedDocuments";
 import MentorDashboard from "./pages/mentor/MentorDashboard";
 import MentorStudents from "./pages/mentor/MentorStudents";
 import MentorFeedback from "./pages/mentor/MentorFeedback";
-import StudentMentor from "./pages/student/StudentMentor";
 
 const queryClient = new QueryClient();
 
@@ -34,7 +34,8 @@ const App = () => (
             <Route path="/student/67" element={<StudentSixtySeven />} />
             <Route path="/student/feedback" element={<StudentFeedback />} />
             <Route path="/student/peers" element={<StudentPeers />} />
-            <Route path="/student/mentors" element={<StudentMentor />} />
+            <Route path="/student/shared-documents" element={<StudentSharedDocuments />} />
+            <Route path="/student/mentors" element={<StudentSharedDocuments />} />
           </Route>
 
           <Route element={<DashboardLayout />}>
