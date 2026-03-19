@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   AlertDialog,
@@ -270,9 +270,11 @@ function buildTaskChatIntro(milestone: MilestoneItem) {
 }
 
 export default function StudentMilestones() {
+  const [searchParams] = useSearchParams();
   const [phaseState, setPhaseState] = useState<PhaseState[]>(() => getInteractivePhaseState());
   const [workspace, setWorkspace] = useState(() => getInteractiveStudentWorkspace(DEMO_STUDENT));
   const [selectedPhaseKey, setSelectedPhaseKey] = useState<string>(phases[0]?.key ?? "");
+  const [hasAppliedPhaseFromUrl, setHasAppliedPhaseFromUrl] = useState(false);
   const [activeTab, setActiveTab] = useState<"tasks" | "create">("tasks");
   const [newTaskPhaseKey, setNewTaskPhaseKey] = useState<string>(phases[0]?.key ?? "");
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -374,6 +376,22 @@ export default function StudentMilestones() {
   useEffect(() => {
     setQuote(inspirationalQuotes[Math.floor(Math.random() * inspirationalQuotes.length)]);
   }, []);
+
+  useEffect(() => {
+    if (hasAppliedPhaseFromUrl) return;
+
+    const phaseFromUrl = searchParams.get("phase");
+    if (!phaseFromUrl) {
+      setHasAppliedPhaseFromUrl(true);
+      return;
+    }
+
+    const hasMatchingPhase = phaseState.some((phase) => phase.key === phaseFromUrl);
+    if (hasMatchingPhase) {
+      setSelectedPhaseKey(phaseFromUrl);
+    }
+    setHasAppliedPhaseFromUrl(true);
+  }, [hasAppliedPhaseFromUrl, phaseState, searchParams]);
 
   useEffect(() => {
     const syncWorkspace = () => setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
@@ -855,20 +873,20 @@ export default function StudentMilestones() {
             67
           </Link>
         </div>
-        <div className={`rounded-full px-4 py-2 text-left shrink-0 ${completionPercentage === 100 ? "bg-emerald-100" : "bg-secondary"}`}>
+        <div className={`min-w-[132px] rounded-full px-6 py-4 text-left shrink-0 ${completionPercentage === 100 ? "bg-emerald-100" : "bg-secondary"}`}>
           <p className={`ds-caption ${completionPercentage === 100 ? "text-emerald-700" : "text-muted-foreground"}`}>Completed</p>
-          <p className={`ds-title-cards leading-none mt-1 ${completionPercentage === 100 ? "text-emerald-800" : ""}`}>{completionPercentage}%</p>
+          <p className={`mt-1 text-4xl font-semibold leading-none ${completionPercentage === 100 ? "text-emerald-800" : "text-foreground"}`}>{completionPercentage}%</p>
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "tasks" | "create")} className="space-y-4">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "tasks" | "create")} className="space-y-1">
         <TabsList>
           <TabsTrigger value="tasks">Tasks</TabsTrigger>
           <TabsTrigger value="create">Add task</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="tasks" className="space-y-8">
-          <div className="flex justify-end">
+        <TabsContent value="tasks" className="space-y-4 mt-0">
+          <div className="flex justify-end -mt-4 mb-1">
             <Button type="button" variant="outline" onClick={handleRestoreDefaultTasks}>
               Restore default tasks
             </Button>
@@ -884,7 +902,7 @@ export default function StudentMilestones() {
             <button
               type="button"
               onClick={() => setSelectedPhaseKey(phase.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full whitespace-nowrap transition-colors border ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-full whitespace-nowrap transition-colors border ${
                 selectedPhaseKey === phase.key
                   ? completedPhases.has(phase.key)
                     ? "bg-emerald-100 text-emerald-800 border-emerald-200"
@@ -899,14 +917,14 @@ export default function StudentMilestones() {
               }`}
               aria-pressed={selectedPhaseKey === phase.key}
             >
-              <span className={`ds-badge ${
+              <span className={`text-[12px] font-medium ${
                 completedPhases.has(phase.key)
                   ? "text-emerald-700"
                   : activePhases.has(phase.key)
                     ? "text-blue-700"
                     : "text-muted-foreground"
               }`}>{i + 1}</span>
-              <span className="ds-label">{phase.label}</span>
+              <span className="text-[15px] font-medium leading-none">{phase.label}</span>
             </button>
             {i < phases.length - 1 && <div className="h-px w-6 bg-border shrink-0" />}
           </div>
@@ -1095,7 +1113,7 @@ export default function StudentMilestones() {
           }
         </TabsContent>
 
-        <TabsContent value="create">
+        <TabsContent value="create" className="mt-0">
           <Card className="border shadow-none">
             <CardContent className="pt-6">
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">

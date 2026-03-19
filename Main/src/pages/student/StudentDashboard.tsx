@@ -167,7 +167,10 @@ export default function StudentDashboard() {
         </p>
       </div>
 
-      <Link to="/student/milestones" className="block">
+      <Link
+        to={currentPhaseKey ? `/student/milestones?phase=${currentPhaseKey}` : "/student/milestones"}
+        className="block"
+      >
         <Card className="border shadow-none hover:shadow-md transition-shadow duration-300 cursor-pointer">
           <CardContent className="pt-8 space-y-6">
             <div className="flex items-center justify-between gap-4">
