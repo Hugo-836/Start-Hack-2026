@@ -639,7 +639,7 @@ export function getInteractiveMilestoneCount(milestones: any[] | undefined) {
   );
 }
 
-function loadInteractiveWorkspaceState(): WorkspaceState {
+export function loadInteractiveWorkspaceState(): WorkspaceState {
   if (typeof window === "undefined") {
     return { customFeedbacks: [], projectDocuments: [], sharedDocumentRequests: [] };
   }
@@ -661,7 +661,7 @@ function loadInteractiveWorkspaceState(): WorkspaceState {
   }
 }
 
-function saveInteractiveWorkspaceState(state: WorkspaceState) {
+export function saveInteractiveWorkspaceState(state: WorkspaceState) {
   if (typeof window === "undefined") {
     return;
   }
@@ -897,5 +897,44 @@ export function deleteInteractiveProjectDocument(documentId: string) {
   saveInteractiveWorkspaceState({
     ...workspaceState,
     projectDocuments: workspaceState.projectDocuments.filter((item) => item.id !== documentId),
+  });
+}
+
+export function updateInteractiveFeedbackSubmission(
+  studentId: string,
+  feedbackId: string,
+  updates: Partial<WorkspaceFeedback>
+) {
+  const workspaceState = loadInteractiveWorkspaceState();
+
+  const updatedCustomFeedbacks = workspaceState.customFeedbacks.map((fb) =>
+    fb.id === feedbackId ? { ...fb, ...updates } : fb
+  );
+
+  saveInteractiveWorkspaceState({
+    ...workspaceState,
+    customFeedbacks: updatedCustomFeedbacks,
+  });
+
+  void supabase
+    .from("feedback_loops")
+    .update({
+      ...(updates.ai_summary !== undefined && { ai_summary: updates.ai_summary }),
+      ...(updates.status !== undefined && { status: updates.status as Database["public"]["Enums"]["feedback_status"] }),
+    })
+    .eq("id", feedbackId)
+    .then(({ error }) => {
+      if (!error) {
+        remoteCache = null;
+        ensureRemoteDataLoaded();
+      }
+    });
+}
+
+export function clearInteractiveCustomFeedbacks() {
+  const workspaceState = loadInteractiveWorkspaceState();
+  saveInteractiveWorkspaceState({
+    ...workspaceState,
+    customFeedbacks: [],
   });
 }

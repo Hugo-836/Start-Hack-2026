@@ -10,6 +10,7 @@ import { buildThesisCommandCenter } from "./server/thesisCommandCenter";
 import { generateTaskAssistantReply } from "./server/taskAssistant";
 import { matchSharedDocumentsWithClaude } from "./server/sharedDocumentMatcher";
 import { discoverDocumentsWithClaude } from "./server/documentDiscoveryAssistant";
+import { generateAiFeedback } from "./server/aiFeedback";
 
 function readBody(req: NodeJS.ReadableStream) {
   return new Promise<string>((resolve, reject) => {
