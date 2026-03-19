@@ -561,10 +561,9 @@ export function restoreInteractiveDefaultMilestones(phaseState: PhaseState[]) {
     const phaseDefinition = phases.find((item) => item.key === phase.key);
     if (!phaseDefinition) return phase;
 
-    const defaultMilestones = [
-      ...phaseDefinition.fallbackMilestones,
-      ...phaseDefinition.queuedMilestones,
-    ];
+    // Restore only the milestones that are part of the default visible plan.
+    // Queued milestones are intentionally hidden until introduced elsewhere.
+    const defaultMilestones = phaseDefinition.fallbackMilestones;
     const existingIds = new Set(phase.milestones.map((milestone) => milestone.id));
     const restoredDefaults = defaultMilestones.filter((milestone) => !existingIds.has(milestone.id));
 

@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, BookOpen, Sparkles, Building2, Briefcase, FolderOpen } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { ArrowRight, BookOpen, Sparkles, Building2, Briefcase, FolderOpen, Send } from "lucide-react";
 import {
   DEMO_STUDENT,
   getInteractivePhaseState,
@@ -43,6 +45,11 @@ const milestoneStatusLabels: Record<string, string> = {
   overdue: "Overdue",
 };
 
+type DashboardChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export default function StudentDashboard() {
   const [phaseState, setPhaseState] = useState<any[]>(() =>
     getInteractivePhaseState(),
@@ -53,6 +60,14 @@ export default function StudentDashboard() {
   const [monthlyOwlChecks] = useState(() =>
     Array.from({ length: 4 }, () => Math.random() > 0.4),
   );
+  const [dashboardChatInput, setDashboardChatInput] = useState("");
+  const [dashboardChatMessages, setDashboardChatMessages] = useState<DashboardChatMessage[]>([
+    {
+      role: "assistant",
+      content: "Ask me any general question about your thesis progress, project direction, feedback, or shared documents.",
+    },
+  ]);
+  const [isDashboardChatLoading, setIsDashboardChatLoading] = useState(false);
 
   const {
     student,
@@ -154,13 +169,6 @@ export default function StudentDashboard() {
     pendingMilestones.find((milestone: any) => milestone.status === "upcoming") ||
     null;
 
-  const aiSuggestionText =
-    totalMilestones === 0
-      ? "You don't have any milestones yet. Create a progress plan to structure your thesis journey."
-      : nextMilestone
-        ? `Your next focus should be "${nextMilestone.title}". Keep your milestone page updated so your dashboard stays in sync.`
-        : "All current milestones are completed. You can add new ones to keep structuring the next phase of your thesis.";
-
   const allSharedDocuments = getInteractiveProjectDocuments();
   const sharedDocumentRequests = getInteractiveSharedDocumentRequests();
   const mySharedDocuments = allSharedDocuments.filter((document) =>
@@ -171,6 +179,85 @@ export default function StudentDashboard() {
   );
   const openPeerRequests = sharedDocumentRequests.filter((request) => request.student_id !== student?.id);
   const currentMonthLabel = new Date().toLocaleString("en-US", { month: "long" });
+
+  const handleDashboardChatSend = async () => {
+    const prompt = dashboardChatInput.trim();
+    if (!prompt) return;
+
+    const nextMessages = [
+      ...dashboardChatMessages,
+      { role: "user", content: prompt } as DashboardChatMessage,
+    ];
+
+    setDashboardChatMessages(nextMessages);
+    setDashboardChatInput("");
+
+    try {
+      setIsDashboardChatLoading(true);
+      const response = await fetch("/api/dashboard-ai-chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          context: {
+            student: student
+              ? {
+                  first_name: student.first_name,
+                  last_name: student.last_name,
+                  degree: student.degree,
+                  about: student.about,
+                }
+              : null,
+            activeProject: activeProject
+              ? {
+                  title: activeProject.title,
+                  description: activeProject.description,
+                  state: activeProject.state,
+                }
+              : null,
+            nextMilestone: nextMilestone
+              ? {
+                  title: nextMilestone.title,
+                  description: nextMilestone.description,
+                  phaseLabel: nextMilestone.phaseLabel,
+                  status: nextMilestone.status,
+                }
+              : null,
+            sharedDocuments: {
+              mine: mySharedDocuments.length,
+              peers: peerSharedDocuments.length,
+              requests: openPeerRequests.length,
+            },
+          },
+          messages: nextMessages,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Dashboard AI chat failed with status ${response.status}`);
+      }
+
+      const data = (await response.json()) as { reply?: string };
+      const reply = data.reply?.trim() || "I could not answer that clearly right now.";
+
+      setDashboardChatMessages((current) => [
+        ...current,
+        { role: "assistant", content: reply },
+      ]);
+    } catch {
+      setDashboardChatMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content:
+            "I could not respond right now. Try asking about your next milestone, your project direction, or your shared documents.",
+        },
+      ]);
+    } finally {
+      setIsDashboardChatLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-8 max-w-6xl">
@@ -444,23 +531,43 @@ export default function StudentDashboard() {
       </div>
 
       <Card className="border border-ai shadow-none">
-        <CardContent className="pt-6">
+        <CardContent className="pt-5">
           <div className="flex items-start gap-4">
             <div className="rounded-full bg-ai p-2 shrink-0">
               <Sparkles className="h-4 w-4 text-white" />
             </div>
 
-            <div>
-              <p className="ds-label text-ai">AI Suggestion</p>
-              <p className="ds-body text-muted-foreground mt-2">{aiSuggestionText}</p>
+            <div className="min-w-0 flex-1">
+              <p className="ds-label text-ai">AI Chat</p>
+              <div className="mt-2 max-h-[180px] space-y-2 overflow-y-auto rounded-xl border border-ai/20 bg-ai/5 p-3">
+                {dashboardChatMessages.map((message, index) => (
+                  <div
+                    key={`${message.role}-${index}`}
+                    className={`rounded-xl px-3 py-2 text-sm ${
+                      message.role === "assistant"
+                        ? "bg-background text-foreground"
+                        : "ml-auto max-w-[85%] bg-ai text-white"
+                    }`}
+                  >
+                    {message.content}
+                  </div>
+                ))}
+              </div>
 
-              <Link
-                to="/student/milestones"
-                className="inline-flex items-center gap-1 mt-5 ds-label text-foreground hover:underline"
-              >
-                {totalMilestones === 0 ? "Create milestones" : "Open milestones"}
-                <ArrowRight className="h-3 w-3" />
-              </Link>
+              <div className="mt-2 space-y-2">
+                <Textarea
+                  rows={2}
+                  value={dashboardChatInput}
+                  onChange={(event) => setDashboardChatInput(event.target.value)}
+                  placeholder="Example: What should I focus on this week?"
+                />
+                <div className="flex justify-end">
+                  <Button onClick={handleDashboardChatSend} disabled={!dashboardChatInput.trim() || isDashboardChatLoading}>
+                    <Send className="h-4 w-4" />
+                    {isDashboardChatLoading ? "Thinking..." : "Ask AI"}
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         </CardContent>
