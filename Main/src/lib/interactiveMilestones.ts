@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import { mentorExamples } from "../../mock-data/mentors";
 
 export const DEMO_STUDENT = "student-04";
 export const INTERACTIVE_MILESTONES_STORAGE_KEY = `studyond-interactive-milestones-${DEMO_STUDENT}`;
@@ -724,7 +725,7 @@ export function getInteractivePeerConnections(studentId?: string) {
 }
 
 export function getInteractiveMockMentors() {
-  return [];
+  return mentorExamples;
 }
 
 export function getInteractiveStudent(studentId = DEMO_STUDENT) {
