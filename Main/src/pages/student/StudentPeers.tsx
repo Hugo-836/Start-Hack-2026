@@ -36,15 +36,6 @@ function formatPercent(value: number | null | undefined) {
   return typeof value === "number" ? `${value}%` : null;
 }
 
-function buildMailtoLink(email: string, subject: string, body: string) {
-  const params = new URLSearchParams({
-    subject,
-    body,
-  });
-
-  return `mailto:${email}?${params.toString()}`;
-}
-
 function getPrimaryProject(projects: any[], studentId: string) {
   const studentProjects = projects.filter((project) => project.student_id === studentId);
   return (
@@ -59,6 +50,8 @@ export default function StudentPeers() {
   const [emailDraft, setEmailDraft] = useState<{ subject: string; body: string } | null>(null);
   const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
   const [selectedMentorId, setSelectedMentorId] = useState<string | null>(null);
+  const [mentorDialogId, setMentorDialogId] = useState<string | null>(null);
+  const [mentorEmailDraft, setMentorEmailDraft] = useState<{ subject: string; body: string } | null>(null);
   const [isGeneratingMentorEmail, setIsGeneratingMentorEmail] = useState(false);
 
   const workspace = getInteractiveStudentWorkspace(DEMO_STUDENT);
@@ -227,6 +220,7 @@ export default function StudentPeers() {
     setEmailDraft(null);
     setIsGeneratingEmail(false);
   };
+  const selectedMentor = mentorSuggestions.find((item) => item.mentor.id === mentorDialogId) || null;
 
   const openMentorEmailDialog = async (mentorId: string) => {
     if (!currentStudent || !currentProject || !mentors) return;
@@ -234,6 +228,8 @@ export default function StudentPeers() {
     if (!item) return;
 
     setSelectedMentorId(mentorId);
+    setMentorDialogId(mentorId);
+    setMentorEmailDraft(null);
     setIsGeneratingMentorEmail(true);
 
     try {
@@ -260,21 +256,22 @@ export default function StudentPeers() {
       }
 
       const data = (await response.json()) as { subject: string; body: string };
-      window.location.href = buildMailtoLink(item.mentor.email, data.subject, data.body);
+      setMentorEmailDraft(data);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      const fallbackDraft = {
+      setMentorEmailDraft({
         subject: "Mentorship request regarding my thesis",
         body: `Hello ${item.mentor.full_name},\n\nI am currently working on my thesis and your expertise seems very relevant to my topic. I would be grateful for a short exchange if you are available.\n\nBest regards,\n${currentStudent.first_name} ${currentStudent.last_name}\n\nGeneration fallback: ${message}`,
-      };
-      window.location.href = buildMailtoLink(
-        item.mentor.email,
-        fallbackDraft.subject,
-        fallbackDraft.body,
-      );
+      });
     } finally {
       setIsGeneratingMentorEmail(false);
     }
+  };
+
+  const closeMentorDialog = () => {
+    setMentorDialogId(null);
+    setMentorEmailDraft(null);
+    setIsGeneratingMentorEmail(false);
   };
 
   return (
@@ -608,6 +605,66 @@ export default function StudentPeers() {
 
           <DialogFooter>
             <Button type="button" onClick={closeEmailDialog} disabled={isGeneratingEmail}>
+              <Send className="h-4 w-4" />
+              Send
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(mentorDialogId)} onOpenChange={(open) => !open && closeMentorDialog()}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              AI email draft{selectedMentor ? ` for ${selectedMentor.mentor.full_name}` : ""}
+            </DialogTitle>
+            <DialogDescription>
+              This draft uses your thesis and the mentor expertise profile.
+            </DialogDescription>
+          </DialogHeader>
+
+          {isGeneratingMentorEmail ? (
+            <p className="text-sm text-muted-foreground">Generating email...</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Subject</p>
+                <Input
+                  value={mentorEmailDraft?.subject || ""}
+                  onChange={(event) =>
+                    setMentorEmailDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            subject: event.target.value,
+                          }
+                        : current,
+                    )
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Body</p>
+                <Textarea
+                  value={mentorEmailDraft?.body || ""}
+                  onChange={(event) =>
+                    setMentorEmailDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            body: event.target.value,
+                          }
+                        : current,
+                    )
+                  }
+                  className="min-h-[260px]"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button type="button" onClick={closeMentorDialog} disabled={isGeneratingMentorEmail}>
               <Send className="h-4 w-4" />
               Send
             </Button>
