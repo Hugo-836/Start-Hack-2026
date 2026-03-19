@@ -4,12 +4,21 @@ export const INTERACTIVE_MILESTONES_EVENT = "studyond:interactive-milestones-upd
 
 export type MilestoneStatus = "upcoming" | "in_progress" | "completed" | "overdue";
 
+export type MilestoneAttachment = {
+  name: string;
+  type: string;
+  size: number;
+  dataUrl: string;
+};
+
 export type MilestoneItem = {
   id: string;
   title: string;
   description: string | null;
   status: MilestoneStatus;
   due_date: string | null;
+  isCustom?: boolean;
+  attachment?: MilestoneAttachment | null;
 };
 
 export type PhaseDefinition = {
@@ -110,6 +119,8 @@ function toMilestoneItem(milestone: any): MilestoneItem {
     description: milestone.description,
     status: milestone.status as MilestoneStatus,
     due_date: milestone.due_date,
+    isCustom: milestone.isCustom === true,
+    attachment: milestone.attachment ?? null,
   };
 }
 
@@ -146,16 +157,52 @@ export function loadInteractiveMilestones(milestones: any[] | undefined): PhaseS
     if (!Array.isArray(parsedState)) {
       return baseState;
     }
+
+    const hiddenMilestoneIdsByPhase = new Map(
+      parsedState.map((storedPhase) => {
+        const basePhase = baseState.find((phase) => phase.key === storedPhase.key);
+        const baseIds = new Set(basePhase?.milestones.map((milestone) => milestone.id) || []);
+        const storedVisibleIds = new Set(storedPhase.milestones.map((milestone) => milestone.id));
+        const hiddenIds = Array.from(baseIds).filter((id) => !storedVisibleIds.has(id));
+
+        return [storedPhase.key, new Set(hiddenIds)] as const;
+      }),
+    );
+
+    const customMilestonesByPhase = new Map(
+      parsedState.map((phase) => {
+        const baseIds = new Set([
+          ...phase.fallbackMilestones.map((milestone) => milestone.id),
+          ...phase.queuedMilestones.map((milestone) => milestone.id),
+        ]);
+
+        const customMilestones = phase.milestones
+          .filter((milestone) => milestone.isCustom === true || !baseIds.has(milestone.id))
+          .map((milestone) => toMilestoneItem({ ...milestone, isCustom: true }));
+
+        return [phase.key, customMilestones] as const;
+      }),
+    );
+
     const storedStatusById = new Map(
       parsedState.flatMap((phase) => phase.milestones.map((milestone) => [milestone.id, milestone.status] as const)),
     );
 
     return baseState.map((phase) => ({
       ...phase,
-      milestones: phase.milestones.map((milestone) => ({
-        ...milestone,
-        status: storedStatusById.get(milestone.id) || milestone.status,
-      })),
+      milestones: [
+        ...phase.milestones
+          .filter((milestone) => !hiddenMilestoneIdsByPhase.get(phase.key)?.has(milestone.id))
+          .map((milestone) => ({
+            ...milestone,
+            status: storedStatusById.get(milestone.id) || milestone.status,
+          })),
+        ...(customMilestonesByPhase.get(phase.key) || []).map((milestone) => ({
+          ...milestone,
+          status: storedStatusById.get(milestone.id) || milestone.status,
+          isCustom: true,
+        })),
+      ],
     }));
   } catch {
     return baseState;

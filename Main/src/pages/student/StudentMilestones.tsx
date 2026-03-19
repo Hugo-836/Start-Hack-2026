@@ -1,12 +1,28 @@
 import { useEffect, useState } from "react";
-import { useProgressMilestones } from "@/hooks/useStudyondData";
+import { useFeedbackLoops, useProgressMilestones, useStudents, useThesisProjects } from "@/hooks/useStudyondData";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { CheckCircle2, Circle, Clock, AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CheckCircle2, Circle, Clock, AlertTriangle, Paperclip, Plus, Sparkles, Trash2, Upload, X } from "lucide-react";
 import {
   DEMO_STUDENT,
   loadInteractiveMilestones,
+  type MilestoneAttachment,
+  type MilestoneItem,
   type MilestoneStatus,
   type PhaseState,
   phases,
@@ -20,15 +36,196 @@ const statusConfig: Record<MilestoneStatus, { icon: typeof Circle; color: string
   overdue: { icon: AlertTriangle, color: "text-red-600", label: "Overdue" },
 };
 
+const selectableStatuses: MilestoneStatus[] = ["upcoming", "in_progress", "completed"];
+const MAX_ATTACHMENT_SIZE_BYTES = 5 * 1024 * 1024;
+
+type SuggestedTask = {
+  title: string;
+  description: string;
+};
+
+type SuggestionContext = {
+  phaseState: PhaseState[];
+  student: any;
+  projects: any[];
+  feedbacks: any[];
+};
+
+function buildAiSuggestions(phaseKey: string, context: SuggestionContext): SuggestedTask[] {
+  const { phaseState, student, projects, feedbacks } = context;
+  const attachments = phaseState.flatMap((phase) =>
+    phase.milestones
+      .filter((milestone) => milestone.attachment)
+      .map((milestone) => ({
+        phaseKey: phase.key,
+        milestoneTitle: milestone.title,
+        name: milestone.attachment?.name || "",
+        type: milestone.attachment?.type || "",
+      })),
+  );
+
+  const attachmentNames = attachments.map((attachment) => attachment.name.toLowerCase());
+  const hasPdf = attachments.some((attachment) => attachment.type.includes("pdf") || attachment.name.toLowerCase().endsWith(".pdf"));
+  const hasSpreadsheet = attachmentNames.some((name) => name.endsWith(".csv") || name.endsWith(".xlsx") || name.endsWith(".xls"));
+  const hasSlides = attachmentNames.some((name) => name.endsWith(".ppt") || name.endsWith(".pptx"));
+  const hasInterviewNotes = attachmentNames.some((name) => name.includes("interview") || name.includes("notes") || name.includes("meeting"));
+  const latestAttachment = attachments[attachments.length - 1];
+  const activeProject = projects.find((project) => project.state === "in_progress" || project.state === "agreed") || projects[0];
+  const latestFeedback = feedbacks.find((feedback) => feedback.reviewer_feedback);
+  const topSkill = student?.skills?.[0];
+  const aboutText = student?.about?.trim();
+  const projectTitle = activeProject?.title?.trim();
+  const projectDescription = activeProject?.description?.trim() || activeProject?.motivation?.trim();
+  const feedbackText = latestFeedback?.reviewer_feedback?.trim();
+
+  const suggestionsByPhase: Record<string, SuggestedTask[]> = {
+    orientation: [
+      {
+        title: "Review your thesis context",
+        description: latestAttachment
+          ? `Read through ${latestAttachment.name}${projectTitle ? ` and connect it to ${projectTitle}` : ""} to extract the main constraints for your thesis setup.`
+          : projectTitle
+            ? `Review ${projectTitle} and extract the main constraints for your thesis setup.`
+            : "Review your current thesis context in the site and extract the main constraints for your setup.",
+      },
+      {
+        title: "Summarize initial requirements",
+        description: aboutText
+          ? `Use your profile and thesis context to write a short list of what ${aboutText.slice(0, 80)}${aboutText.length > 80 ? "..." : ""} implies for scope and deliverables.`
+          : "Write a short list of what your profile, project details, and uploaded material imply for timeline, scope, and deliverables.",
+      },
+    ],
+    topic_search: [
+      {
+        title: "Extract topic ideas from your site data",
+        description: projectDescription
+          ? `List research directions inspired by your project description: ${projectDescription.slice(0, 90)}${projectDescription.length > 90 ? "..." : ""}`
+          : "List research directions inspired by your uploaded files, project details, and student profile.",
+      },
+      {
+        title: hasPdf ? "Turn source PDFs into topic notes" : "Turn your thesis context into topic notes",
+        description: topSkill
+          ? `Capture the strongest concepts, keywords, and open questions around your ${topSkill} focus.`
+          : "Capture the strongest concepts, keywords, and open questions from your documents and project context.",
+      },
+    ],
+    planning: [
+      {
+        title: hasSpreadsheet ? "Build a plan from uploaded data" : "Build a plan from your site evidence",
+        description: projectTitle
+          ? `Use all current information around ${projectTitle} to define next milestones, dependencies, and deadlines.`
+          : "Use your uploaded material, project details, and profile data to define next milestones, dependencies, and deadlines.",
+      },
+      {
+        title: "Identify missing inputs",
+        description: feedbackText
+          ? `Check which pieces are still missing after this feedback: ${feedbackText.slice(0, 90)}${feedbackText.length > 90 ? "..." : ""}`
+          : "Check which pieces are still missing across your profile, project details, and uploaded material before execution.",
+      },
+    ],
+    execution: [
+      {
+        title: hasInterviewNotes ? "Analyze uploaded notes" : "Analyze your current work",
+        description: latestFeedback
+          ? "Review your attachments together with reviewer feedback and extract the next execution step."
+          : "Review your attachments, project details, and current site data to extract key findings for execution.",
+      },
+      {
+        title: hasSpreadsheet ? "Clean and validate your dataset" : "Validate your current evidence",
+        description: "Make sure the material stored across the site is usable, complete, and ready for analysis.",
+      },
+    ],
+    writing: [
+      {
+        title: hasSlides ? "Turn uploaded slides into writing points" : "Turn your site material into writing points",
+        description: "Use your uploaded documents, project description, and feedback to prepare arguments, structure, and evidence for the draft.",
+      },
+      {
+        title: "Add citations and references",
+        description: "Review documents, project content, and feedback across the site and note what should be cited or referenced in the manuscript.",
+      },
+    ],
+  };
+
+  const fallbackSuggestions: SuggestedTask[] = [
+    {
+      title: "Review uploaded files",
+      description: "Go through the files already uploaded in the site and note the next concrete action.",
+    },
+  ];
+
+  return suggestionsByPhase[phaseKey] || fallbackSuggestions;
+}
+
 export default function StudentMilestones() {
   const { data: milestones, isLoading } = useProgressMilestones(DEMO_STUDENT);
+  const { data: students } = useStudents();
+  const { data: projects } = useThesisProjects();
+  const { data: feedbacks } = useFeedbackLoops(DEMO_STUDENT);
   const [phaseState, setPhaseState] = useState<PhaseState[]>(() => loadInteractiveMilestones(undefined));
   const [selectedPhaseKey, setSelectedPhaseKey] = useState<string>(phases[0]?.key ?? "");
+  const [activeTab, setActiveTab] = useState<"tasks" | "create">("tasks");
+  const [newTaskPhaseKey, setNewTaskPhaseKey] = useState<string>(phases[0]?.key ?? "");
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskDescription, setNewTaskDescription] = useState("");
+  const [expandedSuggestionTitles, setExpandedSuggestionTitles] = useState<string[]>([]);
+  const [lockPromptOpen, setLockPromptOpen] = useState(false);
+  const [pendingStatusChange, setPendingStatusChange] = useState<{
+    phaseKey: string;
+    milestoneId: string;
+    currentStatus: MilestoneStatus;
+    nextStatus: MilestoneStatus;
+  } | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const student = students?.find((item: any) => item.id === DEMO_STUDENT);
+  const studentProjects = projects?.filter((item: any) => item.student_id === DEMO_STUDENT) || [];
+  const studentFeedbacks = feedbacks || [];
+  const totalMilestones = phaseState.reduce((total, phase) => total + phase.milestones.length, 0);
+  const aiSuggestions = buildAiSuggestions(newTaskPhaseKey, {
+    phaseState,
+    student,
+    projects: studentProjects,
+    feedbacks: studentFeedbacks,
+  });
+  const completedMilestones = phaseState.reduce(
+    (total, phase) => total + phase.milestones.filter((milestone) => milestone.status === "completed").length,
+    0,
+  );
+  const completionPercentage = totalMilestones > 0 ? Math.round((completedMilestones / totalMilestones) * 100) : 0;
   const completedPhases = new Set(
     phaseState
       .filter((phase) => phase.milestones.length > 0 && phase.milestones.every((milestone) => milestone.status === "completed"))
       .map((phase) => phase.key),
   );
+  const activePhases = new Set(
+    phaseState
+      .filter(
+        (phase) =>
+          !completedPhases.has(phase.key) &&
+          phase.milestones.some(
+            (milestone) => milestone.status === "in_progress" || milestone.status === "completed",
+          ),
+      )
+      .map((phase) => phase.key),
+  );
+  const isPhaseUnlocked = (phaseKey: string) => {
+    const phaseIndex = phaseState.findIndex((phase) => phase.key === phaseKey);
+    if (phaseIndex <= 0) return true;
+
+    const previousPhase = phaseState[phaseIndex - 1];
+    return previousPhase.milestones.length > 0 && previousPhase.milestones.every((milestone) => milestone.status === "completed");
+  };
+  const isStatusChangeBlocked = (phaseKey: string, currentStatus: MilestoneStatus, nextStatus: MilestoneStatus) =>
+    !isPhaseUnlocked(phaseKey) && currentStatus === "upcoming" && nextStatus !== "upcoming";
+
+  const getNextStatus = (status: MilestoneStatus) => {
+    const currentIndex = selectableStatuses.indexOf(status);
+    if (currentIndex === -1 || currentIndex === selectableStatuses.length - 1) {
+      return selectableStatuses[0];
+    }
+
+    return selectableStatuses[currentIndex + 1];
+  };
 
   useEffect(() => {
     if (!isLoading) {
@@ -43,16 +240,37 @@ export default function StudentMilestones() {
     if (!selectedPhaseExists) {
       setSelectedPhaseKey(phaseState[0].key);
     }
-  }, [phaseState, selectedPhaseKey]);
 
-  const toggleMilestone = (phaseKey: string, milestoneId: string, checked: boolean) => {
+    const newTaskPhaseExists = phaseState.some((phase) => phase.key === newTaskPhaseKey);
+    if (!newTaskPhaseExists) {
+      setNewTaskPhaseKey(phaseState[0].key);
+    }
+  }, [newTaskPhaseKey, phaseState, selectedPhaseKey]);
+
+  useEffect(() => {
+    setNewTaskPhaseKey(selectedPhaseKey);
+  }, [selectedPhaseKey]);
+
+  const updateMilestoneStatus = (
+    phaseKey: string,
+    milestoneId: string,
+    currentStatus: MilestoneStatus,
+    nextStatus: MilestoneStatus,
+    force = false,
+  ) => {
+    if (!force && isStatusChangeBlocked(phaseKey, currentStatus, nextStatus)) {
+      setPendingStatusChange({ phaseKey, milestoneId, currentStatus, nextStatus });
+      setLockPromptOpen(true);
+      return;
+    }
+
     setPhaseState((current) => {
       const nextState = current.map((phase) => {
         if (phase.key !== phaseKey) return phase;
 
         const updatedMilestones = phase.milestones.map((milestone) =>
           milestone.id === milestoneId
-            ? { ...milestone, status: checked ? "completed" : "upcoming" }
+            ? { ...milestone, status: nextStatus }
             : milestone,
         );
 
@@ -66,7 +284,7 @@ export default function StudentMilestones() {
       const updatedPhase = updatedPhaseIndex >= 0 ? nextState[updatedPhaseIndex] : null;
       const isPhaseCompleted = updatedPhase ? updatedPhase.milestones.length > 0 && updatedPhase.milestones.every((milestone) => milestone.status === "completed") : false;
 
-      if (checked && isPhaseCompleted) {
+      if (nextStatus === "completed" && isPhaseCompleted) {
         const nextPhase = nextState[updatedPhaseIndex + 1];
         if (nextPhase) {
           setSelectedPhaseKey(nextPhase.key);
@@ -78,14 +296,240 @@ export default function StudentMilestones() {
     });
   };
 
+  const handleAddCustomTask = () => {
+    const title = newTaskTitle.trim();
+    const description = newTaskDescription.trim();
+    if (!title) return;
+
+    const customMilestone: MilestoneItem = {
+      id: `custom-${Date.now()}`,
+      title,
+      description: description || null,
+      status: "upcoming",
+      due_date: null,
+      isCustom: true,
+    };
+
+    setPhaseState((current) => {
+      const nextState = current.map((phase) =>
+        phase.key === newTaskPhaseKey
+          ? { ...phase, milestones: [...phase.milestones, customMilestone] }
+          : phase,
+      );
+
+      saveInteractiveMilestones(nextState);
+      return nextState;
+    });
+
+    setSelectedPhaseKey(newTaskPhaseKey);
+    setNewTaskTitle("");
+    setNewTaskDescription("");
+    setActiveTab("tasks");
+  };
+
+  const handleUseSuggestion = (suggestion: SuggestedTask) => {
+    setNewTaskTitle(suggestion.title);
+    setNewTaskDescription(suggestion.description);
+  };
+
+  const toggleSuggestionExpansion = (title: string) => {
+    setExpandedSuggestionTitles((current) =>
+      current.includes(title)
+        ? current.filter((item) => item !== title)
+        : [...current, title],
+    );
+  };
+
+  const handleDeleteTask = (phaseKey: string, milestoneId: string) => {
+    setPhaseState((current) => {
+      const nextState = current.map((phase) =>
+        phase.key === phaseKey
+          ? {
+              ...phase,
+              milestones: phase.milestones.filter((milestone) => milestone.id !== milestoneId),
+            }
+          : phase,
+      );
+
+      saveInteractiveMilestones(nextState);
+      return nextState;
+    });
+  };
+
+  const handleRestoreDefaultTasks = () => {
+    setPhaseState((current) => {
+      const nextState = current.map((phase) => {
+        const phaseDefinition = phases.find((item) => item.key === phase.key);
+        if (!phaseDefinition) return phase;
+
+        const defaultMilestones = [
+          ...phaseDefinition.fallbackMilestones,
+          ...phaseDefinition.queuedMilestones,
+        ];
+        const existingIds = new Set(phase.milestones.map((milestone) => milestone.id));
+        const restoredDefaults = defaultMilestones.filter((milestone) => !existingIds.has(milestone.id));
+
+        if (restoredDefaults.length === 0) {
+          return phase;
+        }
+
+        return {
+          ...phase,
+          milestones: [...phase.milestones, ...restoredDefaults],
+          hiddenMilestones: phase.hiddenMilestones.filter(
+            (milestone) => !restoredDefaults.some((restored) => restored.id === milestone.id),
+          ),
+        };
+      });
+
+      saveInteractiveMilestones(nextState);
+      return nextState;
+    });
+  };
+
+  const handleAttachFile = (phaseKey: string, milestoneId: string, file: File | null) => {
+    if (!file) return;
+
+    if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+      setUploadError("Please choose a file smaller than 5 MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === "string" ? reader.result : "";
+      if (!dataUrl) {
+        setUploadError("This file could not be attached.");
+        return;
+      }
+
+      const attachment: MilestoneAttachment = {
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        dataUrl,
+      };
+
+      setPhaseState((current) => {
+        const nextState = current.map((phase) =>
+          phase.key === phaseKey
+            ? {
+                ...phase,
+                milestones: phase.milestones.map((milestone) =>
+                  milestone.id === milestoneId
+                    ? {
+                        ...milestone,
+                        attachment,
+                        status: milestone.status === "upcoming" ? "in_progress" : milestone.status,
+                      }
+                    : milestone,
+                ),
+              }
+            : phase,
+        );
+
+        saveInteractiveMilestones(nextState);
+        return nextState;
+      });
+
+      setUploadError(null);
+    };
+
+    reader.onerror = () => {
+      setUploadError("This file could not be attached.");
+    };
+
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveAttachment = (phaseKey: string, milestoneId: string) => {
+    setPhaseState((current) => {
+      const nextState = current.map((phase) =>
+        phase.key === phaseKey
+          ? {
+              ...phase,
+              milestones: phase.milestones.map((milestone) =>
+                milestone.id === milestoneId ? { ...milestone, attachment: null } : milestone,
+              ),
+            }
+          : phase,
+      );
+
+      saveInteractiveMilestones(nextState);
+      return nextState;
+    });
+  };
+
+  const handleConfirmBlockedStatusChange = () => {
+    if (!pendingStatusChange) return;
+
+    updateMilestoneStatus(
+      pendingStatusChange.phaseKey,
+      pendingStatusChange.milestoneId,
+      pendingStatusChange.currentStatus,
+      pendingStatusChange.nextStatus,
+      true,
+    );
+    setLockPromptOpen(false);
+    setPendingStatusChange(null);
+  };
+
   return (
     <div className="space-y-8 max-w-4xl">
-      <div>
-        <h1 className="ds-title-lg tracking-tight">Progress</h1>
-        <p className="ds-body text-muted-foreground mt-1">Track your milestones across the 5 thesis phases and check them off as you go.</p>
+      <AlertDialog
+        open={lockPromptOpen}
+        onOpenChange={(open) => {
+          setLockPromptOpen(open);
+          if (!open) {
+            setPendingStatusChange(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Finish the previous phase first?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This task belongs to a phase that is still locked. You can go back and complete the previous phase first, or force this task anyway.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Ok, I&apos;ll finish the previous tasks</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmBlockedStatusChange}>
+              Mark it anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="ds-title-lg tracking-tight">Progress</h1>
+          <p className="ds-body text-muted-foreground mt-1">Track your milestones across the 5 thesis phases and check them off as you go.</p>
+        </div>
+        <div className={`rounded-full px-4 py-2 text-left shrink-0 ${completionPercentage === 100 ? "bg-emerald-100" : "bg-secondary"}`}>
+          <p className={`ds-caption ${completionPercentage === 100 ? "text-emerald-700" : "text-muted-foreground"}`}>Completed</p>
+          <p className={`ds-title-cards leading-none mt-1 ${completionPercentage === 100 ? "text-emerald-800" : ""}`}>{completionPercentage}%</p>
+        </div>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-2">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "tasks" | "create")} className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="tasks">Tasks</TabsTrigger>
+          <TabsTrigger value="create">Add task</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="tasks" className="space-y-8">
+          <div className="flex justify-end">
+            <Button type="button" variant="outline" onClick={handleRestoreDefaultTasks}>
+              Restore default tasks
+            </Button>
+          </div>
+          {uploadError && (
+            <div className="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 ds-small text-destructive">
+              {uploadError}
+            </div>
+          )}
+          <div className="flex gap-2 overflow-x-auto pb-2">
         {phases.map((phase, i) => (
           <div key={phase.key} className="flex items-center gap-2">
             <button
@@ -95,78 +539,277 @@ export default function StudentMilestones() {
                 selectedPhaseKey === phase.key
                   ? completedPhases.has(phase.key)
                     ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                    : activePhases.has(phase.key)
+                      ? "bg-blue-100 text-blue-800 border-blue-200"
                     : "bg-secondary border-border text-foreground"
                   : completedPhases.has(phase.key)
                     ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                    : activePhases.has(phase.key)
+                      ? "bg-blue-50 text-blue-700 border-blue-100"
                     : "bg-background text-muted-foreground border-border"
               }`}
               aria-pressed={selectedPhaseKey === phase.key}
             >
-              <span className={`ds-badge ${completedPhases.has(phase.key) ? "text-emerald-700" : "text-muted-foreground"}`}>{i + 1}</span>
+              <span className={`ds-badge ${
+                completedPhases.has(phase.key)
+                  ? "text-emerald-700"
+                  : activePhases.has(phase.key)
+                    ? "text-blue-700"
+                    : "text-muted-foreground"
+              }`}>{i + 1}</span>
               <span className="ds-label">{phase.label}</span>
             </button>
             {i < phases.length - 1 && <div className="h-px w-6 bg-border shrink-0" />}
           </div>
         ))}
-      </div>
+          </div>
 
-      {isLoading ? (
-        <p className="text-muted-foreground">Loading...</p>
-      ) : (
-        phaseState
-          .filter((group) => group.key === selectedPhaseKey)
-          .map((group) => (
-          <div key={group.key} className="space-y-3">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <h2 className="ds-title-cards">{group.label}</h2>
-                {group.isUsingFallback && (
-                  <Badge variant="outline" className="ds-badge">
-                    Interactive plan
-                  </Badge>
-                )}
-              </div>
-              <p className="ds-small text-muted-foreground">{group.intro}</p>
-            </div>
-
-            {group.milestones.map((milestone) => {
-              const config = statusConfig[milestone.status] || statusConfig.upcoming;
-              const Icon = config.icon;
-              const isCompleted = milestone.status === "completed";
-
-              return (
-                <Card key={milestone.id} className="border shadow-none">
-                  <CardContent className="py-4 flex items-center gap-4">
-                    <Checkbox
-                      checked={isCompleted}
-                      onCheckedChange={(checked) => toggleMilestone(group.key, milestone.id, checked === true)}
-                      aria-label={`Mark ${milestone.title} as completed`}
-                    />
-
-                    <Icon className={`h-5 w-5 shrink-0 ${config.color}`} />
-
-                    <div className="flex-1 min-w-0">
-                      <p className={`ds-label truncate ${isCompleted ? "line-through text-muted-foreground" : ""}`}>{milestone.title}</p>
-                      {milestone.description && (
-                        <p className={`ds-caption truncate ${isCompleted ? "text-muted-foreground/70 line-through" : "text-muted-foreground"}`}>
-                          {milestone.description}
-                        </p>
+          {isLoading ? (
+            <p className="text-muted-foreground">Loading...</p>
+          ) : (
+            phaseState
+              .filter((group) => group.key === selectedPhaseKey)
+              .map((group) => (
+                <div key={group.key} className="space-y-3">
+                  {(() => {
+                    const isUnlocked = isPhaseUnlocked(group.key);
+                    return (
+                      <>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <h2 className="ds-title-cards">{group.label}</h2>
+                      {group.isUsingFallback && (
+                        <Badge variant="outline" className="ds-badge">
+                          Interactive plan
+                        </Badge>
+                      )}
+                      {!isUnlocked && (
+                        <Badge variant="outline" className="ds-badge">
+                          Finish previous phase first
+                        </Badge>
                       )}
                     </div>
+                    <p className="ds-small text-muted-foreground">{group.intro}</p>
+                  </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      {milestone.due_date && <span className="ds-caption text-muted-foreground">{new Date(milestone.due_date).toLocaleDateString("en-US")}</span>}
-                      <Badge variant="secondary" className="ds-badge">
-                        {config.label}
-                      </Badge>
+                  {group.milestones.map((milestone) => {
+                    const config = statusConfig[milestone.status] || statusConfig.upcoming;
+                    const Icon = config.icon;
+                    const isCompleted = milestone.status === "completed";
+                    const statusLocked = isStatusChangeBlocked(group.key, milestone.status, getNextStatus(milestone.status));
+
+                    return (
+                      <Card key={milestone.id} className="border shadow-none">
+                        <CardContent className="py-4 flex items-center gap-4">
+                          <Checkbox
+                            checked={isCompleted}
+                            onCheckedChange={(checked) => updateMilestoneStatus(group.key, milestone.id, milestone.status, checked === true ? "completed" : "upcoming")}
+                            aria-label={`Mark ${milestone.title} as completed`}
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() => updateMilestoneStatus(group.key, milestone.id, milestone.status, getNextStatus(milestone.status))}
+                            className={`shrink-0 rounded-full transition-opacity hover:opacity-80 ${statusLocked ? "opacity-50" : ""}`}
+                            aria-label={`Change status for ${milestone.title}`}
+                          >
+                            <Icon className={`h-5 w-5 ${config.color}`} />
+                          </button>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className={`ds-label truncate ${isCompleted ? "line-through text-muted-foreground" : ""}`}>{milestone.title}</p>
+                              {milestone.isCustom && (
+                                <Badge variant="outline" className="ds-badge">
+                                  Custom
+                                </Badge>
+                              )}
+                            </div>
+                            {milestone.description && (
+                              <p className={`ds-caption truncate ${isCompleted ? "text-muted-foreground/70 line-through" : "text-muted-foreground"}`}>
+                                {milestone.description}
+                              </p>
+                            )}
+                            {milestone.attachment && (
+                              <div className="mt-2 flex items-center gap-2">
+                                <a
+                                  href={milestone.attachment.dataUrl}
+                                  download={milestone.attachment.name}
+                                  className="inline-flex max-w-full items-center gap-1 rounded-full bg-secondary px-2.5 py-1 ds-caption text-foreground hover:bg-secondary/80"
+                                >
+                                  <Paperclip className="h-3 w-3 shrink-0" />
+                                  <span className="truncate">{milestone.attachment.name}</span>
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveAttachment(group.key, milestone.id)}
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
+                                  aria-label={`Remove file from ${milestone.title}`}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div>
+                              <input
+                                id={`attachment-${group.key}-${milestone.id}`}
+                                type="file"
+                                className="sr-only"
+                                onChange={(event) => {
+                                  handleAttachFile(group.key, milestone.id, event.target.files?.[0] || null);
+                                  event.currentTarget.value = "";
+                                }}
+                              />
+                              <label
+                                htmlFor={`attachment-${group.key}-${milestone.id}`}
+                                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                                aria-label={`Attach file to ${milestone.title}`}
+                              >
+                                <Upload className="h-4 w-4" />
+                              </label>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => handleDeleteTask(group.key, milestone.id)}
+                              aria-label={`Delete ${milestone.title}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                            {milestone.due_date && <span className="ds-caption text-muted-foreground">{new Date(milestone.due_date).toLocaleDateString("en-US")}</span>}
+                            <button
+                              type="button"
+                              onClick={() => updateMilestoneStatus(group.key, milestone.id, milestone.status, getNextStatus(milestone.status))}
+                              className={`inline-flex h-8 min-w-[132px] items-center justify-center rounded-md bg-secondary px-3 py-1 ds-badge transition-colors hover:bg-secondary/80 ${statusLocked ? "opacity-50" : ""} ${config.color}`}
+                              aria-label={`Change status for ${milestone.title}`}
+                            >
+                              {config.label}
+                            </button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                      </>
+                    );
+                  })()}
+                </div>
+              ))
+          )}
+        </TabsContent>
+
+        <TabsContent value="create">
+          <Card className="border shadow-none">
+            <CardContent className="pt-6">
+              <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+                <div className="space-y-4">
+                  <div>
+                    <h2 className="ds-title-cards">Add a personal task</h2>
+                    <p className="ds-small text-muted-foreground mt-1">Create your own task and place it in the thesis phase you want.</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="ds-label">Phase</label>
+                    <Select value={newTaskPhaseKey} onValueChange={setNewTaskPhaseKey}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose a phase" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {phases.map((phase) => (
+                          <SelectItem key={phase.key} value={phase.key}>
+                            {phase.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="ds-label">Task title</label>
+                    <Input
+                      value={newTaskTitle}
+                      onChange={(event) => setNewTaskTitle(event.target.value)}
+                      placeholder="Example: Send draft to my supervisor"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="ds-label">Short description</label>
+                    <Input
+                      value={newTaskDescription}
+                      onChange={(event) => setNewTaskDescription(event.target.value)}
+                      placeholder="Optional details for this task"
+                    />
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button onClick={handleAddCustomTask} disabled={!newTaskTitle.trim()}>
+                      <Plus className="h-4 w-4" />
+                      Add task
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-3 rounded-xl border border-ai/20 bg-ai/5 p-4 h-fit">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-full bg-ai p-2 shrink-0">
+                      <Sparkles className="h-4 w-4 text-white" />
                     </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        ))
-      )}
+                    <div>
+                      <p className="ds-label text-ai">AI task suggestions</p>
+                      <p className="ds-small text-muted-foreground mt-1">
+                        Suggestions are based on your project details, profile, feedback, and uploaded files across the site for the selected phase.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {aiSuggestions.map((suggestion) => (
+                      <div key={suggestion.title} className="flex items-start justify-between gap-3 rounded-lg border bg-background px-3 py-3">
+                        <div className="min-w-0">
+                          {(() => {
+                            const isExpanded = expandedSuggestionTitles.includes(suggestion.title);
+                            const shortDescription =
+                              suggestion.description.length > 90
+                                ? `${suggestion.description.slice(0, 90)}...`
+                                : suggestion.description;
+
+                            return (
+                              <>
+                          <p className="ds-label">{suggestion.title}</p>
+                          <p className="ds-caption text-muted-foreground mt-1">
+                            {isExpanded ? suggestion.description : shortDescription}
+                          </p>
+                          {suggestion.description.length > 90 && (
+                            <button
+                              type="button"
+                              onClick={() => toggleSuggestionExpansion(suggestion.title)}
+                              className="mt-1 ds-caption text-ai hover:underline"
+                            >
+                              {isExpanded ? "Read less" : "Read more"}
+                            </button>
+                          )}
+                              </>
+                            );
+                          })()}
+                        </div>
+                        <Button type="button" variant="outline" size="sm" onClick={() => handleUseSuggestion(suggestion)}>
+                          Use
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
