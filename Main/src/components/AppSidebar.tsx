@@ -5,6 +5,7 @@ import {
 } from "@/components/ui/sidebar";
 import { NavLink } from "@/components/NavLink";
 import { GraduationCap, LayoutDashboard, MessageSquare, Milestone, Users, BookOpen, FolderOpen, UserCheck } from "lucide-react";
+import { useDemoAuth } from "@/lib/demoAuth";
 
 const studentItems = [
   { title: "Dashboard", url: "/student", icon: LayoutDashboard },
@@ -25,6 +26,7 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
+  const { session, logout } = useDemoAuth();
   const isMentor = location.pathname.startsWith("/mentor");
   const items = isMentor ? mentorItems : studentItems;
 
@@ -57,6 +59,16 @@ export function AppSidebar() {
         <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
             <SidebarMenu>
+              {!isMentor && session ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <button type="button" onClick={logout} className="hover:bg-muted/50 text-muted-foreground">
+                      <UserCheck className="mr-2 h-4 w-4" />
+                      {!collapsed && <span className="ds-caption">Log out</span>}
+                    </button>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ) : null}
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
                   <Link to={isMentor ? "/student" : "/mentor"} className="hover:bg-muted/50 text-muted-foreground">

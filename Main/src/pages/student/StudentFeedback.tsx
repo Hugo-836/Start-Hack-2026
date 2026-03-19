@@ -6,10 +6,10 @@ import {
   addInteractiveFeedbackSubmission,
   updateInteractiveFeedbackSubmission,
   clearInteractiveCustomFeedbacks,
-  DEMO_STUDENT,
   getInteractiveStudentWorkspace,
   INTERACTIVE_WORKSPACE_EVENT,
 } from "@/lib/interactiveMilestones";
+import { useDemoAuth } from "@/lib/demoAuth";
 
 const statusConfig: Record<string, { icon: any; color: string; label: string; badgeClass: string }> = {
   pending: { icon: Send, color: "text-muted-foreground", label: "Pending", badgeClass: "bg-muted text-muted-foreground" },
@@ -19,7 +19,9 @@ const statusConfig: Record<string, { icon: any; color: string; label: string; ba
 };
 
 export default function StudentFeedback() {
-  const [workspace, setWorkspace] = useState(() => getInteractiveStudentWorkspace(DEMO_STUDENT));
+  const { session } = useDemoAuth();
+  const currentStudentId = session?.studentId;
+  const [workspace, setWorkspace] = useState(() => getInteractiveStudentWorkspace(currentStudentId));
   const [file, setFile] = useState<File | null>(null);
   const [loadingAI, setLoadingAI] = useState<string | null>(null);
   const [aiFeedbackTypes, setAiFeedbackTypes] = useState<Record<string, string>>({});
@@ -34,19 +36,21 @@ export default function StudentFeedback() {
   const allFeedbacks = workspace.studentFeedbacks;
 
   useEffect(() => {
-    const syncWorkspace = () => setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
+    const syncWorkspace = () => setWorkspace(getInteractiveStudentWorkspace(currentStudentId));
     window.addEventListener(INTERACTIVE_WORKSPACE_EVENT, syncWorkspace);
+    window.addEventListener("storage", syncWorkspace);
     window.addEventListener("focus", syncWorkspace);
     return () => {
       window.removeEventListener(INTERACTIVE_WORKSPACE_EVENT, syncWorkspace);
+      window.removeEventListener("storage", syncWorkspace);
       window.removeEventListener("focus", syncWorkspace);
     };
-  }, []);
+  }, [currentStudentId]);
 
   const handleSubmit = () => {
     const newFeedback = {
       id: `feedback-custom-${Date.now()}`,
-      student_id: DEMO_STUDENT,
+      student_id: currentStudentId || "",
       title: title || "Untitled submission",
       submission_text: text,
       file_name: file?.name || null,
@@ -57,7 +61,7 @@ export default function StudentFeedback() {
       reviewer_type: "supervisor" as const,
     };
     addInteractiveFeedbackSubmission(newFeedback);
-    setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
+    setWorkspace(getInteractiveStudentWorkspace(currentStudentId));
     setTitle("");
     setText("");
     setFile(null);
@@ -73,12 +77,12 @@ export default function StudentFeedback() {
         body: JSON.stringify({ title: fb.title, submission_text: fb.submission_text }),
       });
       const data = await response.json();
-      updateInteractiveFeedbackSubmission(DEMO_STUDENT, fb.id, {
+      updateInteractiveFeedbackSubmission(currentStudentId || "", fb.id, {
         ai_summary: data.summary,
         status: fb.status === "submitted" ? "reviewed" : fb.status,
       });
       setAiFeedbackTypes((prev) => ({ ...prev, [fb.id]: data.feedback_type }));
-      setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
+      setWorkspace(getInteractiveStudentWorkspace(currentStudentId));
     } catch (error) {
       console.error("AI feedback error:", error);
     } finally {
@@ -89,7 +93,7 @@ export default function StudentFeedback() {
   const handleClearAll = () => {
     if (!window.confirm("Delete all feedbacks? This cannot be undone.")) return;
     clearInteractiveCustomFeedbacks();
-    setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
+    setWorkspace(getInteractiveStudentWorkspace(currentStudentId));
   };
 
   return (

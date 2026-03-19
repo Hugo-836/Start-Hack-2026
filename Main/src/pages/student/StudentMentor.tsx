@@ -2,7 +2,8 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Users, GraduationCap, Briefcase } from "lucide-react";
-import { DEMO_STUDENT, getInteractiveStudentWorkspace } from "@/lib/interactiveMilestones";
+import { getInteractiveStudentWorkspace } from "@/lib/interactiveMilestones";
+import { useDemoAuth } from "@/lib/demoAuth";
 
 type MentorItem = {
   id: string;
@@ -15,7 +16,8 @@ type MentorItem = {
 };
 
 export default function StudentMentors() {
-  const { studentProjects, supervisors, experts } = getInteractiveStudentWorkspace(DEMO_STUDENT);
+  const { session } = useDemoAuth();
+  const { studentProjects, supervisors, experts } = getInteractiveStudentWorkspace(session?.studentId);
 
   const mentorsMap = new Map<string, MentorItem>();
 
