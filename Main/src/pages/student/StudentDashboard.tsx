@@ -3,12 +3,8 @@ import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-<<<<<<< HEAD
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowRight, BookOpen, Sparkles, Building2, Briefcase, FolderOpen, Send } from "lucide-react";
-=======
-import { ArrowRight, BookOpen, Sparkles, Building2, Briefcase, FolderOpen } from "lucide-react";
->>>>>>> b52e979714550e4eb9d798cd5546348b49fb87bf
 import {
   deleteInteractivePeerConnection,
   getInteractivePhaseState,
@@ -53,18 +49,16 @@ const milestoneStatusLabels: Record<string, string> = {
   overdue: "Overdue",
 };
 
-<<<<<<< HEAD
 type DashboardChatMessage = {
   role: "user" | "assistant";
   content: string;
 };
-=======
+
 const PEER_CONNECTIONS_SYNC_URL = "/api/demo-peer-connections";
 
 function getPeerPairKey(studentAId: string, studentBId: string) {
   return [studentAId, studentBId].sort().join(":");
 }
->>>>>>> b52e979714550e4eb9d798cd5546348b49fb87bf
 
 export default function StudentDashboard() {
   const { session } = useDemoAuth();

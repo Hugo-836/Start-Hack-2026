@@ -326,8 +326,6 @@ export default defineConfig(({ mode }) => {
               res.end(JSON.stringify({ error: message }));
             }
           });
-<<<<<<< HEAD
-
           server.middlewares.use("/api/dashboard-ai-chat", async (req: any, res: any, next: any) => {
             if (req.method !== "POST") return next();
 
@@ -348,7 +346,7 @@ export default defineConfig(({ mode }) => {
               res.setHeader("Content-Type", "application/json");
               res.end(JSON.stringify({ error: message }));
             }
-=======
+          });
           server.middlewares.use("/api/demo-shared-document-requests", async (req: any, res: any, next: any) => {
             if (req.method === "GET") {
               res.statusCode = 200;
@@ -460,7 +458,6 @@ export default defineConfig(({ mode }) => {
             }
 
             return next();
->>>>>>> b52e979714550e4eb9d798cd5546348b49fb87bf
           });
           server.middlewares.use("/api/ai-feedback", async (req: any, res: any, next: any) => {
             if (req.method !== "POST") return next();
