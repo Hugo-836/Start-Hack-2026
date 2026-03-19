@@ -289,23 +289,6 @@ export default function StudentPeers() {
             <p className="text-muted-foreground">Loading...</p>
           ) : suggestions.length ? (
             <div className="space-y-4">
-              <Card className="border shadow-none bg-ai/5">
-                <CardContent className="pt-6">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 rounded-full border border-ai/30 bg-background p-2 text-ai">
-                      <Sparkles className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <p className="ds-label text-ai">AI peer matching active</p>
-                      <p className="ds-small text-muted-foreground mt-1">
-                        Suggested peers are ranked from shared thesis themes, skills,
-                        objectives, academic field overlap, and Claude thesis compatibility.
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
               <div className="space-y-4">
                 {suggestions.map((suggestion) => (
                   <Card
