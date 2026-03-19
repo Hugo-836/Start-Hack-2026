@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { useFeedbackLoops, useProgressMilestones, useStudents, useThesisProjects } from "@/hooks/useStudyondData";
+import { useExperts, useFeedbackLoops, usePeerConnections, useProgressMilestones, useStudents, useSupervisors, useThesisProjects } from "@/hooks/useStudyondData";
+import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   AlertDialog,
@@ -246,6 +247,9 @@ export default function StudentMilestones() {
   const { data: students } = useStudents();
   const { data: projects } = useThesisProjects();
   const { data: feedbacks } = useFeedbackLoops(DEMO_STUDENT);
+  const { data: peerConnections } = usePeerConnections(DEMO_STUDENT);
+  const { data: supervisors } = useSupervisors();
+  const { data: experts } = useExperts();
   const [phaseState, setPhaseState] = useState<PhaseState[]>(() => loadInteractiveMilestones(undefined));
   const [selectedPhaseKey, setSelectedPhaseKey] = useState<string>(phases[0]?.key ?? "");
   const [activeTab, setActiveTab] = useState<"tasks" | "create">("tasks");
@@ -258,6 +262,7 @@ export default function StudentMilestones() {
   const [chatTask, setChatTask] = useState<{ phaseKey: string; milestoneId: string } | null>(null);
   const [chatInput, setChatInput] = useState("");
   const [chatMessagesByTask, setChatMessagesByTask] = useState<Record<string, TaskChatMessage[]>>({});
+  const [isChatLoading, setIsChatLoading] = useState(false);
   const [lockPromptOpen, setLockPromptOpen] = useState(false);
   const [pendingStatusChange, setPendingStatusChange] = useState<{
     phaseKey: string;
@@ -269,6 +274,27 @@ export default function StudentMilestones() {
   const student = students?.find((item: any) => item.id === DEMO_STUDENT);
   const studentProjects = projects?.filter((item: any) => item.student_id === DEMO_STUDENT) || [];
   const studentFeedbacks = feedbacks || [];
+  const connectedPeers = (peerConnections || [])
+    .map((connection: any) =>
+      students?.find((item: any) =>
+        item.id === (connection.student_a_id === DEMO_STUDENT ? connection.student_b_id : connection.student_a_id),
+      ),
+    )
+    .filter(Boolean);
+  const connectedMentors = Array.from(
+    new Set(
+      studentProjects.flatMap((project: any) => [
+        ...(project.supervisor_ids || []).map((id: string) => {
+          const supervisor = supervisors?.find((item: any) => item.id === id);
+          return supervisor ? `${supervisor.first_name} ${supervisor.last_name}` : null;
+        }),
+        ...(project.expert_ids || []).map((id: string) => {
+          const expert = experts?.find((item: any) => item.id === id);
+          return expert ? `${expert.first_name} ${expert.last_name}` : null;
+        }),
+      ]),
+    ),
+  ).filter(Boolean);
   const totalMilestones = phaseState.reduce((total, phase) => total + phase.milestones.length, 0);
   const aiSuggestions = buildAiSuggestions(newTaskPhaseKey, {
     phaseState,
@@ -458,7 +484,7 @@ export default function StudentMilestones() {
     }));
   };
 
-  const handleSendChatMessage = () => {
+  const handleSendChatMessage = async () => {
     if (!chatTask || !chatInput.trim()) return;
 
     const phase = phaseState.find((item) => item.key === chatTask.phaseKey);
@@ -466,22 +492,103 @@ export default function StudentMilestones() {
     if (!milestone) return;
 
     const prompt = chatInput.trim();
-    const reply = buildTaskChatReply(prompt, milestone, {
+    setChatMessagesByTask((current) => ({
+      ...current,
+      [chatTask.milestoneId]: [
+        ...(current[chatTask.milestoneId] || []),
+        { role: "user", content: prompt },
+      ],
+    }));
+    setChatInput("");
+
+    const fallbackReply = buildTaskChatReply(prompt, milestone, {
       phaseState,
       student,
       projects: studentProjects,
       feedbacks: studentFeedbacks,
     });
 
-    setChatMessagesByTask((current) => ({
-      ...current,
-      [chatTask.milestoneId]: [
-        ...(current[chatTask.milestoneId] || []),
-        { role: "user", content: prompt },
-        { role: "assistant", content: reply },
-      ],
-    }));
-    setChatInput("");
+    try {
+      setIsChatLoading(true);
+      const response = await fetch("/api/task-ai-chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          task: {
+            title: milestone.title,
+            description: milestone.description,
+            phaseKey: chatTask.phaseKey,
+            status: milestone.status,
+            attachmentName: milestone.attachment?.name || null,
+          },
+          context: {
+            student: student
+              ? {
+                  first_name: student.first_name,
+                  last_name: student.last_name,
+                  degree: student.degree,
+                  skills: student.skills,
+                  about: student.about,
+                }
+              : null,
+            projects: studentProjects.map((project: any) => ({
+              title: project.title,
+              description: project.description,
+              motivation: project.motivation,
+              state: project.state,
+            })),
+            feedbacks: studentFeedbacks.map((feedback: any) => ({
+              title: feedback.title,
+              reviewer_feedback: feedback.reviewer_feedback,
+              ai_summary: feedback.ai_summary,
+              status: feedback.status,
+            })),
+            attachments: phaseState.flatMap((item) =>
+              item.milestones
+                .filter((entry) => entry.attachment)
+                .map((entry) => entry.attachment?.name)
+                .filter(Boolean),
+            ),
+            peers: connectedPeers.map((peer: any) => ({
+              first_name: peer.first_name,
+              last_name: peer.last_name,
+            })),
+            mentors: connectedMentors,
+          },
+          messages: [
+            ...(chatMessagesByTask[chatTask.milestoneId] || []),
+            { role: "user", content: prompt },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Task AI chat failed with status ${response.status}`);
+      }
+
+      const data = (await response.json()) as { reply?: string };
+      const assistantReply = data.reply?.trim() || fallbackReply;
+
+      setChatMessagesByTask((current) => ({
+        ...current,
+        [chatTask.milestoneId]: [
+          ...(current[chatTask.milestoneId] || []),
+          { role: "assistant", content: assistantReply },
+        ],
+      }));
+    } catch {
+      setChatMessagesByTask((current) => ({
+        ...current,
+        [chatTask.milestoneId]: [
+          ...(current[chatTask.milestoneId] || []),
+          { role: "assistant", content: fallbackReply },
+        ],
+      }));
+    } finally {
+      setIsChatLoading(false);
+    }
   };
 
   const handleDeleteTask = (phaseKey: string, milestoneId: string) => {
@@ -651,9 +758,9 @@ export default function StudentMilestones() {
                 placeholder="Example: How should I start this task with the feedback and documents I already have?"
               />
               <div className="flex justify-end">
-                <Button type="button" onClick={handleSendChatMessage} disabled={!chatInput.trim()}>
+                <Button type="button" onClick={handleSendChatMessage} disabled={!chatInput.trim() || isChatLoading}>
                   <Send className="h-4 w-4" />
-                  Ask AI
+                  {isChatLoading ? "Thinking..." : "Ask AI"}
                 </Button>
               </div>
             </div>
@@ -691,6 +798,9 @@ export default function StudentMilestones() {
           <h1 className="ds-title-lg tracking-tight">Progress</h1>
           <p className="ds-body text-muted-foreground mt-1">Track your milestones across the 5 thesis phases and check them off as you go.</p>
           <p className="ds-small text-ai mt-2">{quote}</p>
+          <Link to="/student/67" className="inline-block mt-2 text-[10px] text-transparent select-none hover:text-muted-foreground/40">
+            67
+          </Link>
         </div>
         <div className={`rounded-full px-4 py-2 text-left shrink-0 ${completionPercentage === 100 ? "bg-emerald-100" : "bg-secondary"}`}>
           <p className={`ds-caption ${completionPercentage === 100 ? "text-emerald-700" : "text-muted-foreground"}`}>Completed</p>
@@ -795,12 +905,6 @@ export default function StudentMilestones() {
                       <Card key={milestone.id} className="border shadow-none">
                         <CardContent className="py-4 space-y-3">
                           <div className="flex items-center gap-4">
-                            <Checkbox
-                              checked={isCompleted}
-                              onCheckedChange={(checked) => updateMilestoneStatus(group.key, milestone.id, milestone.status, checked === true ? "completed" : "upcoming")}
-                              aria-label={`Mark ${milestone.title} as completed`}
-                            />
-
                             <button
                               type="button"
                               onClick={() => updateMilestoneStatus(group.key, milestone.id, milestone.status, getNextStatus(milestone.status))}

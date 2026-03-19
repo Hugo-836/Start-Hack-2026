@@ -6,6 +6,7 @@ import { scorePeerThesisSimilarity } from "./server/peerThesisSimilarity";
 import { generatePeerIntroEmail } from "./server/peerIntroEmail";
 import { scoreMentorMatches } from "./server/mentorMatching";
 import { generateMentorIntroEmail } from "./server/mentorIntroEmail";
+import { generateTaskAssistantReply } from "./server/taskAssistant";
 
 function readBody(req: NodeJS.ReadableStream) {
   return new Promise<string>((resolve, reject) => {
@@ -117,6 +118,29 @@ export default defineConfig(({ mode }) => {
               res.statusCode = 200;
               res.setHeader("Content-Type", "application/json");
               res.end(JSON.stringify(email));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "Unknown error";
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: message }));
+            }
+          });
+          server.middlewares.use("/api/task-ai-chat", async (req: any, res: any, next: any) => {
+            if (req.method !== "POST") {
+              return next();
+            }
+
+            try {
+              const rawBody = await readBody(req);
+              const body = JSON.parse(rawBody);
+              const reply = await generateTaskAssistantReply(body, {
+                apiKey: env.ANTHROPIC_API_KEY,
+                model: env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
+              });
+
+              res.statusCode = 200;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify(reply));
             } catch (error) {
               const message = error instanceof Error ? error.message : "Unknown error";
               res.statusCode = 500;
