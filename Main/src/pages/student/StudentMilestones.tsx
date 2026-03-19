@@ -14,10 +14,18 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle2, Circle, Clock, AlertTriangle, Paperclip, Plus, Sparkles, Trash2, Upload, X } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { CheckCircle2, Circle, Clock, AlertTriangle, MessageSquare, Paperclip, Plus, Send, Sparkles, Trash2, Upload, X } from "lucide-react";
 import {
   DEMO_STUDENT,
   loadInteractiveMilestones,
@@ -38,10 +46,22 @@ const statusConfig: Record<MilestoneStatus, { icon: typeof Circle; color: string
 
 const selectableStatuses: MilestoneStatus[] = ["upcoming", "in_progress", "completed"];
 const MAX_ATTACHMENT_SIZE_BYTES = 5 * 1024 * 1024;
+const inspirationalQuotes = [
+  "Progress is built one honest step at a time.",
+  "Small consistent moves beat perfect plans left untouched.",
+  "Your thesis does not need magic, it needs momentum.",
+  "Every finished task makes the next one lighter.",
+  "Clarity grows when you keep moving.",
+];
 
 type SuggestedTask = {
   title: string;
   description: string;
+};
+
+type TaskChatMessage = {
+  role: "user" | "assistant";
+  content: string;
 };
 
 type SuggestionContext = {
@@ -157,6 +177,70 @@ function buildAiSuggestions(phaseKey: string, context: SuggestionContext): Sugge
   return suggestionsByPhase[phaseKey] || fallbackSuggestions;
 }
 
+function buildTaskAdvice(milestone: MilestoneItem, context: SuggestionContext): string[] {
+  const { phaseState, student, projects, feedbacks } = context;
+  const attachments = phaseState.flatMap((phase) =>
+    phase.milestones
+      .filter((item) => item.attachment)
+      .map((item) => item.attachment?.name)
+      .filter(Boolean),
+  ) as string[];
+  const activeProject = projects.find((project) => project.state === "in_progress" || project.state === "agreed") || projects[0];
+  const latestFeedback = feedbacks.find((feedback) => feedback.reviewer_feedback);
+
+  const advice = [
+    activeProject?.title
+      ? `Keep this task aligned with your current project: ${activeProject.title}.`
+      : "Tie this task to your current thesis objective before you start writing or researching.",
+    latestFeedback?.reviewer_feedback
+      ? `Use the latest feedback as a checklist: ${latestFeedback.reviewer_feedback.slice(0, 110)}${latestFeedback.reviewer_feedback.length > 110 ? "..." : ""}`
+      : "Produce something concrete quickly so you can get feedback early.",
+    attachments.length > 0
+      ? `Reuse existing material first, especially ${attachments[attachments.length - 1]}.`
+      : "Check whether you already have notes or material in the site before starting from zero.",
+    student?.skills?.length
+      ? `Lean on your strengths here, especially ${student.skills.slice(0, 2).join(" and ")}.`
+      : "Break this into one small next action to keep momentum.",
+  ];
+
+  if (milestone.attachment) {
+    advice.unshift(`You already attached ${milestone.attachment.name} to this task. Use it as your main reference.`);
+  }
+
+  return advice.slice(0, 4);
+}
+
+function buildTaskChatReply(question: string, milestone: MilestoneItem, context: SuggestionContext) {
+  const { projects, feedbacks, student } = context;
+  const activeProject = projects.find((project) => project.state === "in_progress" || project.state === "agreed") || projects[0];
+  const latestFeedback = feedbacks.find((feedback) => feedback.reviewer_feedback);
+  const lowerQuestion = question.toLowerCase();
+
+  if (lowerQuestion.includes("feedback")) {
+    return latestFeedback?.reviewer_feedback
+      ? `The most useful feedback to apply here is: "${latestFeedback.reviewer_feedback}". I’d turn that into a mini checklist for "${milestone.title}".`
+      : `There is no strong feedback recorded yet, so I’d define one small deliverable for "${milestone.title}" and get it reviewed quickly.`;
+  }
+
+  if (lowerQuestion.includes("document") || lowerQuestion.includes("file") || lowerQuestion.includes("upload")) {
+    return milestone.attachment
+      ? `Start with ${milestone.attachment.name}. Extract 3 useful points from it, then use those points to move "${milestone.title}" forward.`
+      : `Start from the documents already available in the site, then connect them to "${milestone.title}" before creating new material.`;
+  }
+
+  if (lowerQuestion.includes("start") || lowerQuestion.includes("how")) {
+    return `For "${milestone.title}", I’d begin with one concrete next action tied to ${activeProject?.title || "your current thesis project"}, then use any existing feedback or uploaded material to shape the first version.`;
+  }
+
+  return [
+    `For "${milestone.title}", keep the output useful for ${activeProject?.title || "your thesis project"}.`,
+    latestFeedback?.reviewer_feedback
+      ? `Also keep this feedback in mind: "${latestFeedback.reviewer_feedback.slice(0, 100)}${latestFeedback.reviewer_feedback.length > 100 ? "..." : ""}"`
+      : "Try to produce something reviewable quickly instead of waiting for a perfect version.",
+    student?.skills?.length ? `Use your strengths, especially ${student.skills.slice(0, 2).join(" and ")}.` : "Break the task into a small first step.",
+  ].join(" ");
+}
+
 export default function StudentMilestones() {
   const { data: milestones, isLoading } = useProgressMilestones(DEMO_STUDENT);
   const { data: students } = useStudents();
@@ -168,7 +252,12 @@ export default function StudentMilestones() {
   const [newTaskPhaseKey, setNewTaskPhaseKey] = useState<string>(phases[0]?.key ?? "");
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskDescription, setNewTaskDescription] = useState("");
+  const [quote, setQuote] = useState(inspirationalQuotes[0]);
   const [expandedSuggestionTitles, setExpandedSuggestionTitles] = useState<string[]>([]);
+  const [expandedAdviceIds, setExpandedAdviceIds] = useState<string[]>([]);
+  const [chatTask, setChatTask] = useState<{ phaseKey: string; milestoneId: string } | null>(null);
+  const [chatInput, setChatInput] = useState("");
+  const [chatMessagesByTask, setChatMessagesByTask] = useState<Record<string, TaskChatMessage[]>>({});
   const [lockPromptOpen, setLockPromptOpen] = useState(false);
   const [pendingStatusChange, setPendingStatusChange] = useState<{
     phaseKey: string;
@@ -232,6 +321,10 @@ export default function StudentMilestones() {
       setPhaseState(loadInteractiveMilestones(milestones));
     }
   }, [isLoading, milestones]);
+
+  useEffect(() => {
+    setQuote(inspirationalQuotes[Math.floor(Math.random() * inspirationalQuotes.length)]);
+  }, []);
 
   useEffect(() => {
     if (phaseState.length === 0) return;
@@ -338,6 +431,57 @@ export default function StudentMilestones() {
         ? current.filter((item) => item !== title)
         : [...current, title],
     );
+  };
+
+  const toggleAdviceExpansion = (milestoneId: string) => {
+    setExpandedAdviceIds((current) =>
+      current.includes(milestoneId)
+        ? current.filter((item) => item !== milestoneId)
+        : [...current, milestoneId],
+    );
+  };
+
+  const openTaskChat = (phaseKey: string, milestoneId: string) => {
+    setChatTask({ phaseKey, milestoneId });
+    setChatInput("");
+    setChatMessagesByTask((current) => ({
+      ...current,
+      [milestoneId]:
+        current[milestoneId] && current[milestoneId].length > 0
+          ? current[milestoneId]
+          : [
+              {
+                role: "assistant",
+                content: "Ask me for help on this task. I can use your project, feedback, profile, and uploaded documents.",
+              },
+            ],
+    }));
+  };
+
+  const handleSendChatMessage = () => {
+    if (!chatTask || !chatInput.trim()) return;
+
+    const phase = phaseState.find((item) => item.key === chatTask.phaseKey);
+    const milestone = phase?.milestones.find((item) => item.id === chatTask.milestoneId);
+    if (!milestone) return;
+
+    const prompt = chatInput.trim();
+    const reply = buildTaskChatReply(prompt, milestone, {
+      phaseState,
+      student,
+      projects: studentProjects,
+      feedbacks: studentFeedbacks,
+    });
+
+    setChatMessagesByTask((current) => ({
+      ...current,
+      [chatTask.milestoneId]: [
+        ...(current[chatTask.milestoneId] || []),
+        { role: "user", content: prompt },
+        { role: "assistant", content: reply },
+      ],
+    }));
+    setChatInput("");
   };
 
   const handleDeleteTask = (phaseKey: string, milestoneId: string) => {
@@ -476,6 +620,47 @@ export default function StudentMilestones() {
 
   return (
     <div className="space-y-8 max-w-4xl">
+      <Dialog open={Boolean(chatTask)} onOpenChange={(open) => !open && setChatTask(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Ask AI About This Task</DialogTitle>
+            <DialogDescription>
+              Ask for help using your project context, feedback, profile, and uploaded documents.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="max-h-[360px] space-y-3 overflow-y-auto rounded-xl border bg-secondary/20 p-3">
+              {(chatTask ? chatMessagesByTask[chatTask.milestoneId] : [])?.map((message, index) => (
+                <div
+                  key={`${message.role}-${index}`}
+                  className={`rounded-xl px-3 py-2 text-sm ${
+                    message.role === "assistant"
+                      ? "bg-background text-foreground"
+                      : "ml-auto max-w-[85%] bg-primary text-primary-foreground"
+                  }`}
+                >
+                  {message.content}
+                </div>
+              ))}
+            </div>
+            <div className="space-y-2">
+              <Textarea
+                rows={4}
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                placeholder="Example: How should I start this task with the feedback and documents I already have?"
+              />
+              <div className="flex justify-end">
+                <Button type="button" onClick={handleSendChatMessage} disabled={!chatInput.trim()}>
+                  <Send className="h-4 w-4" />
+                  Ask AI
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog
         open={lockPromptOpen}
         onOpenChange={(open) => {
@@ -505,6 +690,7 @@ export default function StudentMilestones() {
         <div>
           <h1 className="ds-title-lg tracking-tight">Progress</h1>
           <p className="ds-body text-muted-foreground mt-1">Track your milestones across the 5 thesis phases and check them off as you go.</p>
+          <p className="ds-small text-ai mt-2">{quote}</p>
         </div>
         <div className={`rounded-full px-4 py-2 text-left shrink-0 ${completionPercentage === 100 ? "bg-emerald-100" : "bg-secondary"}`}>
           <p className={`ds-caption ${completionPercentage === 100 ? "text-emerald-700" : "text-muted-foreground"}`}>Completed</p>
@@ -597,99 +783,140 @@ export default function StudentMilestones() {
                     const Icon = config.icon;
                     const isCompleted = milestone.status === "completed";
                     const statusLocked = isStatusChangeBlocked(group.key, milestone.status, getNextStatus(milestone.status));
+                    const taskAdvice = buildTaskAdvice(milestone, {
+                      phaseState,
+                      student,
+                      projects: studentProjects,
+                      feedbacks: studentFeedbacks,
+                    });
+                    const isAdviceExpanded = expandedAdviceIds.includes(milestone.id);
 
                     return (
                       <Card key={milestone.id} className="border shadow-none">
-                        <CardContent className="py-4 flex items-center gap-4">
-                          <Checkbox
-                            checked={isCompleted}
-                            onCheckedChange={(checked) => updateMilestoneStatus(group.key, milestone.id, milestone.status, checked === true ? "completed" : "upcoming")}
-                            aria-label={`Mark ${milestone.title} as completed`}
-                          />
+                        <CardContent className="py-4 space-y-3">
+                          <div className="flex items-center gap-4">
+                            <Checkbox
+                              checked={isCompleted}
+                              onCheckedChange={(checked) => updateMilestoneStatus(group.key, milestone.id, milestone.status, checked === true ? "completed" : "upcoming")}
+                              aria-label={`Mark ${milestone.title} as completed`}
+                            />
 
-                          <button
-                            type="button"
-                            onClick={() => updateMilestoneStatus(group.key, milestone.id, milestone.status, getNextStatus(milestone.status))}
-                            className={`shrink-0 rounded-full transition-opacity hover:opacity-80 ${statusLocked ? "opacity-50" : ""}`}
-                            aria-label={`Change status for ${milestone.title}`}
-                          >
-                            <Icon className={`h-5 w-5 ${config.color}`} />
-                          </button>
-
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className={`ds-label truncate ${isCompleted ? "line-through text-muted-foreground" : ""}`}>{milestone.title}</p>
-                              {milestone.isCustom && (
-                                <Badge variant="outline" className="ds-badge">
-                                  Custom
-                                </Badge>
-                              )}
-                            </div>
-                            {milestone.description && (
-                              <p className={`ds-caption truncate ${isCompleted ? "text-muted-foreground/70 line-through" : "text-muted-foreground"}`}>
-                                {milestone.description}
-                              </p>
-                            )}
-                            {milestone.attachment && (
-                              <div className="mt-2 flex items-center gap-2">
-                                <a
-                                  href={milestone.attachment.dataUrl}
-                                  download={milestone.attachment.name}
-                                  className="inline-flex max-w-full items-center gap-1 rounded-full bg-secondary px-2.5 py-1 ds-caption text-foreground hover:bg-secondary/80"
-                                >
-                                  <Paperclip className="h-3 w-3 shrink-0" />
-                                  <span className="truncate">{milestone.attachment.name}</span>
-                                </a>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveAttachment(group.key, milestone.id)}
-                                  className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
-                                  aria-label={`Remove file from ${milestone.title}`}
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-2 shrink-0">
-                            <div>
-                              <input
-                                id={`attachment-${group.key}-${milestone.id}`}
-                                type="file"
-                                className="sr-only"
-                                onChange={(event) => {
-                                  handleAttachFile(group.key, milestone.id, event.target.files?.[0] || null);
-                                  event.currentTarget.value = "";
-                                }}
-                              />
-                              <label
-                                htmlFor={`attachment-${group.key}-${milestone.id}`}
-                                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                                aria-label={`Attach file to ${milestone.title}`}
-                              >
-                                <Upload className="h-4 w-4" />
-                              </label>
-                            </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                              onClick={() => handleDeleteTask(group.key, milestone.id)}
-                              aria-label={`Delete ${milestone.title}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                            {milestone.due_date && <span className="ds-caption text-muted-foreground">{new Date(milestone.due_date).toLocaleDateString("en-US")}</span>}
                             <button
                               type="button"
                               onClick={() => updateMilestoneStatus(group.key, milestone.id, milestone.status, getNextStatus(milestone.status))}
-                              className={`inline-flex h-8 min-w-[132px] items-center justify-center rounded-md bg-secondary px-3 py-1 ds-badge transition-colors hover:bg-secondary/80 ${statusLocked ? "opacity-50" : ""} ${config.color}`}
+                              className={`shrink-0 rounded-full transition-opacity hover:opacity-80 ${statusLocked ? "opacity-50" : ""}`}
                               aria-label={`Change status for ${milestone.title}`}
                             >
-                              {config.label}
+                              <Icon className={`h-5 w-5 ${config.color}`} />
                             </button>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className={`ds-label truncate ${isCompleted ? "line-through text-muted-foreground" : ""}`}>{milestone.title}</p>
+                                {milestone.isCustom && (
+                                  <Badge variant="outline" className="ds-badge">
+                                    Custom
+                                  </Badge>
+                                )}
+                              </div>
+                              {milestone.description && (
+                                <p className={`ds-caption truncate ${isCompleted ? "text-muted-foreground/70 line-through" : "text-muted-foreground"}`}>
+                                  {milestone.description}
+                                </p>
+                              )}
+                              {milestone.attachment && (
+                                <div className="mt-2 flex items-center gap-2">
+                                  <a
+                                    href={milestone.attachment.dataUrl}
+                                    download={milestone.attachment.name}
+                                    className="inline-flex max-w-full items-center gap-1 rounded-full bg-secondary px-2.5 py-1 ds-caption text-foreground hover:bg-secondary/80"
+                                  >
+                                    <Paperclip className="h-3 w-3 shrink-0" />
+                                    <span className="truncate">{milestone.attachment.name}</span>
+                                  </a>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveAttachment(group.key, milestone.id)}
+                                    className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
+                                    aria-label={`Remove file from ${milestone.title}`}
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <div>
+                                <input
+                                  id={`attachment-${group.key}-${milestone.id}`}
+                                  type="file"
+                                  className="sr-only"
+                                  onChange={(event) => {
+                                    handleAttachFile(group.key, milestone.id, event.target.files?.[0] || null);
+                                    event.currentTarget.value = "";
+                                  }}
+                                />
+                                <label
+                                  htmlFor={`attachment-${group.key}-${milestone.id}`}
+                                  className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                                  aria-label={`Attach file to ${milestone.title}`}
+                                >
+                                  <Upload className="h-4 w-4" />
+                                </label>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                onClick={() => handleDeleteTask(group.key, milestone.id)}
+                                aria-label={`Delete ${milestone.title}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                              {milestone.due_date && <span className="ds-caption text-muted-foreground">{new Date(milestone.due_date).toLocaleDateString("en-US")}</span>}
+                              <button
+                                type="button"
+                                onClick={() => updateMilestoneStatus(group.key, milestone.id, milestone.status, getNextStatus(milestone.status))}
+                                className={`inline-flex h-8 min-w-[132px] items-center justify-center rounded-md bg-secondary px-3 py-1 ds-badge transition-colors hover:bg-secondary/80 ${statusLocked ? "opacity-50" : ""} ${config.color}`}
+                                aria-label={`Change status for ${milestone.title}`}
+                              >
+                                {config.label}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="pl-9">
+                            <div className="flex items-center gap-4">
+                              <button
+                                type="button"
+                                onClick={() => toggleAdviceExpansion(milestone.id)}
+                                className="inline-flex items-center gap-1 ds-caption text-ai hover:underline"
+                              >
+                                <Sparkles className="h-3.5 w-3.5" />
+                                {isAdviceExpanded ? "Hide AI tips" : "Show AI tips"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openTaskChat(group.key, milestone.id)}
+                                className="inline-flex items-center gap-1 ds-caption text-ai hover:underline"
+                              >
+                                <MessageSquare className="h-3.5 w-3.5" />
+                                Ask AI
+                              </button>
+                            </div>
+
+                            {isAdviceExpanded && (
+                              <div className="mt-2 rounded-xl border border-ai/20 bg-ai/5 p-3 space-y-2">
+                                <p className="ds-label text-ai">AI tips for this task</p>
+                                {taskAdvice.map((tip) => (
+                                  <p key={tip} className="ds-caption text-muted-foreground">
+                                    {tip}
+                                  </p>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </CardContent>
                       </Card>
