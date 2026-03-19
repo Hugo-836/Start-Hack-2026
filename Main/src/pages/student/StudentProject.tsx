@@ -1,6 +1,8 @@
 import { useThesisProjects, useSupervisors, useExperts } from "@/hooks/useStudyondData";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useDocumentSuggestions } from "@/hooks/useDocumentSuggestions";
+
 
 const DEMO_STUDENT = "student-04";
 const stateLabels: Record<string, string> = { proposed: "Proposed", applied: "Applied", withdrawn: "Withdrawn", rejected: "Rejected", agreed: "Agreed", in_progress: "In Progress", canceled: "Canceled", completed: "Completed" };
@@ -10,6 +12,7 @@ export default function StudentProject() {
   const { data: projects } = useThesisProjects();
   const { data: supervisors } = useSupervisors();
   const { data: experts } = useExperts();
+  const { loading, documents, fetchSuggestions } = useDocumentSuggestions();
   const studentProjects = projects?.filter((p: any) => p.student_id === DEMO_STUDENT) || [];
   const getSupervisor = (id: string) => supervisors?.find((s: any) => s.id === id);
   const getExpert = (id: string) => experts?.find((e: any) => e.id === id);
@@ -31,5 +34,7 @@ export default function StudentProject() {
         </Card>
       ))}
     </div>
+    
   );
 }
+
