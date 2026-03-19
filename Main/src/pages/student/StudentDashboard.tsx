@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, BookOpen, Sparkles, Building2, Briefcase } from "lucide-react";
+import { ArrowRight, BookOpen, Sparkles, Building2, Briefcase, FolderOpen } from "lucide-react";
 import {
   DEMO_STUDENT,
   getInteractivePhaseState,
+  getInteractiveProjectDocuments,
+  getInteractiveSharedDocumentRequests,
   getInteractiveStudentWorkspace,
   INTERACTIVE_MILESTONES_EVENT,
   INTERACTIVE_WORKSPACE_EVENT,
@@ -155,6 +157,16 @@ export default function StudentDashboard() {
       : nextMilestone
         ? `Your next focus should be "${nextMilestone.title}". Keep your milestone page updated so your dashboard stays in sync.`
         : "All current milestones are completed. You can add new ones to keep structuring the next phase of your thesis.";
+
+  const allSharedDocuments = getInteractiveProjectDocuments();
+  const sharedDocumentRequests = getInteractiveSharedDocumentRequests();
+  const mySharedDocuments = allSharedDocuments.filter((document) =>
+    studentProjects.some((project: any) => project.id === document.project_id),
+  );
+  const peerSharedDocuments = allSharedDocuments.filter(
+    (document) => !studentProjects.some((project: any) => project.id === document.project_id),
+  );
+  const openPeerRequests = sharedDocumentRequests.filter((request) => request.student_id !== student?.id);
 
   return (
     <div className="space-y-8 max-w-6xl">
@@ -424,12 +436,44 @@ export default function StudentDashboard() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <Link to="/student/shared-documents">
+          <Card className="border shadow-none hover:shadow-md transition-shadow duration-300 cursor-pointer group h-full">
+            <CardContent className="pt-6">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="ds-title-cards group-hover:text-ai-solid transition-colors duration-200">
+                    Shared Documents
+                  </p>
+                  <p className="ds-small text-muted-foreground mt-1">
+                    Search shared files and respond to student document requests.
+                  </p>
+                </div>
+                <div className="rounded-full bg-ai p-2 shrink-0">
+                  <FolderOpen className="h-4 w-4 text-white" />
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Badge variant="secondary" className="border-0">
+                  {mySharedDocuments.length} my docs
+                </Badge>
+                <Badge variant="secondary" className="border-0">
+                  {peerSharedDocuments.length} peer docs
+                </Badge>
+                <Badge className="bg-ai text-white border-0">
+                  {openPeerRequests.length} requests
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+
         <Link to="/student/feedback">
           <Card className="border shadow-none hover:shadow-md transition-shadow duration-300 cursor-pointer group">
             <CardContent className="pt-6">
               <p className="ds-title-cards group-hover:text-ai-solid transition-colors duration-200">
-                Submit Feedback
+                Get Feedback
               </p>
               <p className="ds-small text-muted-foreground mt-1">
                 Send your work to a supervisor for review.
