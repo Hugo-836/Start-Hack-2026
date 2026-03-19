@@ -10,6 +10,7 @@ import { buildThesisCommandCenter } from "./server/thesisCommandCenter";
 import { generateTaskAssistantReply } from "./server/taskAssistant";
 import { matchSharedDocumentsWithClaude } from "./server/sharedDocumentMatcher";
 import { discoverDocumentsWithClaude } from "./server/documentDiscoveryAssistant";
+import { generateAiFeedback } from "./server/aiFeedback";
 
 function readBody(req: NodeJS.ReadableStream) {
   return new Promise<string>((resolve, reject) => {
@@ -204,6 +205,27 @@ export default defineConfig(({ mode }) => {
                 model: env.ANTHROPIC_MODEL || env.CLAUDE_MODEL || "claude-sonnet-4-20250514",
               });
 
+              res.statusCode = 200;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify(result));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "Unknown error";
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: message }));
+            }
+          });
+          server.middlewares.use("/api/ai-feedback", async (req: any, res: any, next: any) => {
+            if (req.method !== "POST") return next();
+          
+            try {
+              const rawBody = await readBody(req);
+              const body = JSON.parse(rawBody);
+              const result = await generateAiFeedback(body, {
+                anthropicApiKey: env.ANTHROPIC_API_KEY,
+                claudeModel: env.CLAUDE_MODEL || "claude-sonnet-4-20250514",
+              });
+          
               res.statusCode = 200;
               res.setHeader("Content-Type", "application/json");
               res.end(JSON.stringify(result));

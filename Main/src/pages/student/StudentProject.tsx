@@ -17,6 +17,21 @@ const stateLabels: Record<string, string> = { proposed: "Proposed", applied: "Ap
 const stateColors: Record<string, string> = { proposed: "bg-muted text-muted-foreground", applied: "bg-blue-100 text-blue-800", agreed: "bg-green-100 text-green-800", in_progress: "bg-purple-100 text-purple-800", completed: "bg-emerald-100 text-emerald-800", rejected: "bg-red-100 text-red-800", withdrawn: "bg-muted text-muted-foreground", canceled: "bg-muted text-muted-foreground" };
 const MAX_PROJECT_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
+function extractDocumentOrdinal(name: string) {
+  const match = name.match(/_doc_(\d+)\.pdf$/i);
+  return match ? Number(match[1]) : null;
+}
+
+function getResolvedDocumentTitle(document: ProjectDocument, projectTitle?: string | null) {
+  const baseTitle = document.display_title?.trim() || projectTitle?.trim() || document.name;
+  if (document.display_title?.trim()) {
+    return baseTitle;
+  }
+
+  const ordinal = extractDocumentOrdinal(document.name);
+  return ordinal ? `${baseTitle} ${ordinal}` : baseTitle;
+}
+
 export default function StudentProject() {
   const [workspace, setWorkspace] = useState(() => getInteractiveStudentWorkspace(DEMO_STUDENT));
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -130,7 +145,9 @@ export default function StudentProject() {
                         className="flex min-w-0 items-center gap-2 text-sm text-foreground hover:underline"
                       >
                         <Paperclip className="h-4 w-4 shrink-0" />
-                        <span className="truncate">{document.name}</span>
+                        <span className="truncate">
+                          {getResolvedDocumentTitle(document, project.title)}
+                        </span>
                       </a>
                       <Button
                         type="button"

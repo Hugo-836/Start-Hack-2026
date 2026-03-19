@@ -43,6 +43,45 @@ function tokenizeSearchValue(value: string) {
     .filter((token) => token.length >= 2);
 }
 
+function extractDocumentOrdinal(name: string) {
+  const match = name.match(/_doc_(\d+)\.pdf$/i);
+  return match ? Number(match[1]) : null;
+}
+
+function getBaseDocumentTitle(document: { display_title?: string | null; name: string }, projectTitle?: string | null) {
+  return document.display_title?.trim() || projectTitle?.trim() || document.name;
+}
+
+function withResolvedDisplayTitles<T extends {
+  name: string;
+  project_id: string;
+  display_title?: string | null;
+  projectTitle?: string | null;
+}>(documents: T[]) {
+  const titleCounts = new Map<string, number>();
+
+  documents.forEach((document) => {
+    const baseTitle = getBaseDocumentTitle(document, document.projectTitle);
+    const key = `${document.project_id}:${baseTitle}`;
+    titleCounts.set(key, (titleCounts.get(key) || 0) + 1);
+  });
+
+  return documents.map((document) => {
+    const baseTitle = getBaseDocumentTitle(document, document.projectTitle);
+    const key = `${document.project_id}:${baseTitle}`;
+    const duplicateCount = titleCounts.get(key) || 0;
+    const ordinal = extractDocumentOrdinal(document.name);
+
+    return {
+      ...document,
+      displayTitle:
+        duplicateCount > 1 && ordinal
+          ? `${baseTitle} ${ordinal}`
+          : baseTitle,
+    };
+  });
+}
+
 function extractDocumentPreview(dataUrl: string, type?: string | null) {
   const normalizedType = (type || "").toLowerCase();
   const canReadAsText =
@@ -145,7 +184,7 @@ export default function StudentSharedDocuments() {
   const sharedDocuments = useMemo(() => {
     const normalizedQuery = normalizeSearchValue(query);
 
-    return allDocuments
+    const documents = allDocuments
       .map((document) => {
         const project = projects.find((item: any) => item.id === document.project_id);
         const owner = students.find((item: any) => item.id === project?.student_id);
@@ -181,6 +220,8 @@ export default function StudentSharedDocuments() {
 
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
+
+    return withResolvedDisplayTitles(documents);
   }, [allDocuments, peerIds, projects, query, student?.id, students]);
 
   const requestDocumentSuggestions = useMemo(() => {
@@ -203,7 +244,7 @@ export default function StudentSharedDocuments() {
       return [];
     }
 
-    return allDocuments
+    const documents = allDocuments
       .map((document) => {
         const project = projects.find((item: any) => item.id === document.project_id);
         const owner = students.find((item: any) => item.id === project?.student_id);
@@ -241,6 +282,8 @@ export default function StudentSharedDocuments() {
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       })
       .slice(0, 6);
+
+    return withResolvedDisplayTitles(documents);
   }, [
     allDocuments,
     peerIds,
@@ -294,7 +337,7 @@ export default function StudentSharedDocuments() {
   }, [peerIds, sharedRequests, student?.id, students]);
 
   const currentStudentDocuments = useMemo(() => {
-    return allDocuments
+    const documents = allDocuments
       .filter((document) => {
         const project = projects.find((item: any) => item.id === document.project_id);
         return project?.student_id === student?.id;
@@ -304,14 +347,15 @@ export default function StudentSharedDocuments() {
         return {
           ...document,
           projectTitle: project?.title || "Untitled project",
-          displayTitle: document.display_title || project?.title || document.name,
           textPreview: extractDocumentPreview(document.dataUrl, document.type),
         };
       });
+
+    return withResolvedDisplayTitles(documents);
   }, [allDocuments, projects, student?.id]);
 
   const peerDocuments = useMemo(() => {
-    return allDocuments
+    const documents = allDocuments
       .filter((document) => {
         const project = projects.find((item: any) => item.id === document.project_id);
         return project?.student_id && project.student_id !== student?.id;
@@ -323,10 +367,11 @@ export default function StudentSharedDocuments() {
           ...document,
           ownerName: owner ? `${owner.first_name} ${owner.last_name}` : "Unknown student",
           projectTitle: project?.title || "Untitled project",
-          displayTitle: document.display_title || project?.title || document.name,
           textPreview: extractDocumentPreview(document.dataUrl, document.type),
         };
       });
+
+    return withResolvedDisplayTitles(documents);
   }, [allDocuments, projects, student?.id, students]);
 
   const handleSearchRequestDocuments = () => {
@@ -867,7 +912,7 @@ export default function StudentSharedDocuments() {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="ds-label truncate">{document.projectTitle}</p>
+                          <p className="ds-label truncate">{document.displayTitle}</p>
                           <p className="ds-caption mt-1 text-muted-foreground">
                             {document.ownerName}
                           </p>
@@ -1024,11 +1069,11 @@ export default function StudentSharedDocuments() {
 
       <Card className="border shadow-none">
         <CardContent className="pt-6 space-y-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="rounded-full bg-secondary p-2">
+              <FileSearch className="h-4 w-4 text-foreground" />
+            </div>
             <div className="flex items-start gap-3">
-              <div className="rounded-full bg-secondary p-2">
-                <FileSearch className="h-4 w-4 text-foreground" />
-              </div>
               <div>
                 <h2 className="ds-title-cards">Documents you could share</h2>
                 <p className="ds-small text-muted-foreground mt-1">
@@ -1036,9 +1081,6 @@ export default function StudentSharedDocuments() {
                 </p>
               </div>
             </div>
-            <Button onClick={handleFindDocumentMatches} disabled={isMatchingDocuments || currentStudentDocuments.length === 0}>
-              {isMatchingDocuments ? "Finding matches..." : "Find AI matches"}
-            </Button>
           </div>
 
           {currentStudentDocuments.length === 0 ? (
@@ -1092,7 +1134,7 @@ export default function StudentSharedDocuments() {
                               <div key={`${request.id}-${match.documentId}`} className="rounded-lg border bg-secondary/20 p-3 space-y-2">
                                 <div className="flex items-start justify-between gap-3">
                                   <div>
-                                    <p className="ds-label">{document.name}</p>
+                                    <p className="ds-label">{document.displayTitle}</p>
                                     <p className="ds-caption mt-1 text-muted-foreground">
                                       {document.projectTitle}
                                     </p>
@@ -1158,7 +1200,7 @@ export default function StudentSharedDocuments() {
               <CardContent className="pt-6 space-y-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="ds-label truncate">{document.display_title || document.projectTitle}</p>
+                    <p className="ds-label truncate">{document.displayTitle}</p>
                     <p className="ds-caption mt-1 text-muted-foreground">
                       {student ? `${student.first_name} ${student.last_name}` : "My document"}
                     </p>
