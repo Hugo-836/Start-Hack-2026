@@ -30,6 +30,7 @@ async function main() {
   await testSingleFile("companies", MOCK_DATA_URLS.companies);
   await testSingleFile("experts", MOCK_DATA_URLS.experts);
   await testSingleFile("fields", MOCK_DATA_URLS.fields);
+  await testSingleFile("mentors", MOCK_DATA_URLS.mentors);
   await testSingleFile("projects", MOCK_DATA_URLS.projects);
   await testSingleFile("students", MOCK_DATA_URLS.students);
   await testSingleFile("studyPrograms", MOCK_DATA_URLS.studyPrograms);
@@ -46,6 +47,7 @@ async function main() {
     companies: getSize(allData.companies),
     experts: getSize(allData.experts),
     fields: getSize(allData.fields),
+    mentors: getSize(allData.mentors),
     projects: getSize(allData.projects),
     students: getSize(allData.students),
     studyPrograms: getSize(allData.studyPrograms),
