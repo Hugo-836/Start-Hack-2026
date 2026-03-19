@@ -47,8 +47,7 @@ export default function StudentMilestones() {
 
   const toggleMilestone = (phaseKey: string, milestoneId: string, checked: boolean) => {
     setPhaseState((current) => {
-      const nextState =
-      current.map((phase) => {
+      const nextState = current.map((phase) => {
         if (phase.key !== phaseKey) return phase;
 
         const updatedMilestones = phase.milestones.map((milestone) =>
@@ -62,6 +61,17 @@ export default function StudentMilestones() {
           milestones: updatedMilestones,
         };
       });
+
+      const updatedPhaseIndex = nextState.findIndex((phase) => phase.key === phaseKey);
+      const updatedPhase = updatedPhaseIndex >= 0 ? nextState[updatedPhaseIndex] : null;
+      const isPhaseCompleted = updatedPhase ? updatedPhase.milestones.length > 0 && updatedPhase.milestones.every((milestone) => milestone.status === "completed") : false;
+
+      if (checked && isPhaseCompleted) {
+        const nextPhase = nextState[updatedPhaseIndex + 1];
+        if (nextPhase) {
+          setSelectedPhaseKey(nextPhase.key);
+        }
+      }
 
       saveInteractiveMilestones(nextState);
       return nextState;
