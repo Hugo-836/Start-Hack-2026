@@ -196,6 +196,10 @@ export function usePeerThesisSimilarity(
           .filter(Boolean)
       : [];
 
+  console.log("usePeerThesisSimilarity currentStudent", currentStudent);
+  console.log("usePeerThesisSimilarity currentProject", currentProject);
+  console.log("usePeerThesisSimilarity candidateProjects", candidateProjects);
+
   return useQuery({
     queryKey: [
       "peer-thesis-similarity",
@@ -208,6 +212,11 @@ export function usePeerThesisSimilarity(
     ],
     queryFn: async () => {
       if (!currentStudent || !currentProject || candidateProjects.length === 0) {
+        console.log("usePeerThesisSimilarity skipped", {
+          hasCurrentStudent: Boolean(currentStudent),
+          hasCurrentProject: Boolean(currentProject),
+          candidateProjectsCount: candidateProjects.length,
+        });
         return {};
       }
 
@@ -239,6 +248,8 @@ export function usePeerThesisSimilarity(
         console.warn("peer-thesis-similarity invoke failed", error);
         return {};
       }
+
+      console.log("peer-thesis-similarity raw data", data);
 
       return Object.fromEntries(
         (data?.matches || []).map((match) => [

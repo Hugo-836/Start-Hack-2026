@@ -25,6 +25,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function StudentPeers() {
+  console.log("StudentPeers render");
   const { data: connections, isLoading } = usePeerConnections(DEMO_STUDENT);
   const { data: students } = useStudents();
   const { data: projects } = useThesisProjects();
@@ -46,6 +47,9 @@ export default function StudentPeers() {
           thesisSimilarityByStudentId,
         })
       : [];
+
+  console.log("StudentPeers thesisSimilarityByStudentId", thesisSimilarityByStudentId);
+  console.log("StudentPeers suggestions", suggestions);
 
   const isPageLoading =
     isLoading || !students || !projects || !fields || isThesisSimilarityLoading;
