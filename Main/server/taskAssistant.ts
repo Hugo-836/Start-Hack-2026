@@ -4,6 +4,7 @@ type TaskAssistantMessage = {
 };
 
 type TaskAssistantPayload = {
+  intent?: "chat" | "tips";
   task: {
     title: string;
     description?: string | null;
@@ -50,6 +51,14 @@ type AnthropicMessagesResponse = {
   content?: AnthropicContentBlock[];
 };
 
+function extractTextFromAnthropicResponse(data: AnthropicMessagesResponse) {
+  return data.content
+    ?.filter((block) => block.type === "text" && typeof block.text === "string")
+    .map((block) => block.text?.trim() || "")
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 export async function generateTaskAssistantReply(
   payload: TaskAssistantPayload,
   options?: { apiKey?: string; model?: string },
@@ -60,16 +69,34 @@ export async function generateTaskAssistantReply(
   }
 
   const model = options?.model || "claude-sonnet-4-20250514";
-  const system = [
-    "You are a concise thesis progress assistant inside a student dashboard.",
-    "Answer the user's question about the current task using only the provided site context.",
-    "Use feedback, uploaded documents, project context, peers, and mentors when relevant.",
-    "Give practical next steps, not generic motivational filler.",
-    "Keep the answer short: 3 to 6 sentences.",
-    "Do not invent facts that are not in the provided context.",
-  ].join(" ");
+  const intent = payload.intent || "chat";
+  const system =
+    intent === "tips"
+      ? [
+          "You are Claude acting as Studyond's thesis progress copilot inside the student dashboard.",
+          "Generate concrete AI tips for the current task using only the provided site context.",
+          "Ground your advice in the student's current project, reviewer feedback, uploaded documents, mentors, peers, and profile when relevant.",
+          "Be practical and action-oriented. Avoid generic encouragement and avoid inventing facts.",
+          "Return valid JSON only with this exact shape: {\"tips\":[\"tip 1\",\"tip 2\",\"tip 3\"]}.",
+          "Return exactly 3 short tips, each as one sentence.",
+        ].join(" ")
+      : [
+          "You are Claude acting as Studyond's thesis progress copilot inside the student dashboard.",
+          "Answer the student's question about the current task using only the provided site context.",
+          "Ground your response in the current project, reviewer feedback, uploaded documents, mentors, peers, and profile when relevant.",
+          "Act like a sharp but supportive thesis coach.",
+          "Lead with the most useful recommendation for moving the task forward right now.",
+          "Give practical next steps, not generic motivational filler.",
+          "Keep the answer short: 3 to 6 sentences.",
+          "If the user asks how to proceed, prioritize the smallest useful next action for this thesis task.",
+          "When useful, point out what to produce next, what to check in the existing material, and what question to ask a supervisor or mentor.",
+          "Be direct, specific, and academically grounded.",
+          "Do not invent facts that are not in the provided context.",
+          "Match the user's language when possible.",
+        ].join(" ");
 
   const userContent = [
+    `Intent: ${intent}`,
     "Task context:",
     JSON.stringify(payload.task, null, 2),
     "Site context:",
@@ -104,14 +131,24 @@ export async function generateTaskAssistantReply(
   }
 
   const data = (await response.json()) as AnthropicMessagesResponse;
-  const text = data.content
-    ?.filter((block) => block.type === "text" && typeof block.text === "string")
-    .map((block) => block.text?.trim() || "")
-    .filter(Boolean)
-    .join("\n\n");
+  const text = extractTextFromAnthropicResponse(data);
 
   if (!text) {
     throw new Error("Anthropic task assistant returned no text.");
+  }
+
+  if (intent === "tips") {
+    const candidate = text.match(/```json\s*([\s\S]*?)```/i)?.[1] || text;
+    const parsed = JSON.parse(candidate) as { tips?: unknown };
+    const tips = Array.isArray(parsed.tips)
+      ? parsed.tips.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean)
+      : [];
+
+    if (tips.length === 0) {
+      throw new Error("Anthropic task assistant returned no tips.");
+    }
+
+    return { tips: tips.slice(0, 3) };
   }
 
   return { reply: text };

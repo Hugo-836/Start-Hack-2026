@@ -261,6 +261,14 @@ function buildTaskChatReply(question: string, milestone: MilestoneItem, context:
   ].join(" ");
 }
 
+function buildTaskChatIntro(milestone: MilestoneItem) {
+  if (milestone.description?.trim()) {
+    return `We’re working on "${milestone.title}". ${milestone.description.trim()} Tell me if you want the best first step, how to use your feedback, or how to turn your current documents into progress on this task.`;
+  }
+
+  return `We’re working on "${milestone.title}". Tell me if you want the best first step, how to use your feedback, or how to turn your current documents into progress on this task.`;
+}
+
 export default function StudentMilestones() {
   const [phaseState, setPhaseState] = useState<PhaseState[]>(() => getInteractivePhaseState());
   const [workspace, setWorkspace] = useState(() => getInteractiveStudentWorkspace(DEMO_STUDENT));
@@ -272,6 +280,8 @@ export default function StudentMilestones() {
   const [quote, setQuote] = useState(inspirationalQuotes[0]);
   const [expandedSuggestionTitles, setExpandedSuggestionTitles] = useState<string[]>([]);
   const [expandedAdviceIds, setExpandedAdviceIds] = useState<string[]>([]);
+  const [aiTipsByTask, setAiTipsByTask] = useState<Record<string, string[]>>({});
+  const [loadingAdviceIds, setLoadingAdviceIds] = useState<string[]>([]);
   const [chatTask, setChatTask] = useState<{ phaseKey: string; milestoneId: string } | null>(null);
   const [chatInput, setChatInput] = useState("");
   const [chatMessagesByTask, setChatMessagesByTask] = useState<Record<string, TaskChatMessage[]>>({});
@@ -472,7 +482,97 @@ export default function StudentMilestones() {
     );
   };
 
+  const loadTaskAdvice = async (phaseKey: string, milestone: MilestoneItem) => {
+    if (aiTipsByTask[milestone.id] || loadingAdviceIds.includes(milestone.id)) return;
+
+    const fallbackTips = buildTaskAdvice(milestone, {
+      phaseState,
+      student,
+      projects: studentProjects,
+      feedbacks: studentFeedbacks,
+      projectDocuments: workspace.projectDocuments,
+    });
+
+    try {
+      setLoadingAdviceIds((current) => [...current, milestone.id]);
+      const response = await fetch("/api/task-ai-chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          intent: "tips",
+          task: {
+            title: milestone.title,
+            description: milestone.description,
+            phaseKey,
+            status: milestone.status,
+            attachmentName: milestone.attachment?.name || null,
+          },
+          context: {
+            student: student
+              ? {
+                  first_name: student.first_name,
+                  last_name: student.last_name,
+                  degree: student.degree,
+                  skills: student.skills,
+                  about: student.about,
+                }
+              : null,
+            projects: studentProjects.map((project: any) => ({
+              title: project.title,
+              description: project.description,
+              motivation: project.motivation,
+              state: project.state,
+            })),
+            feedbacks: studentFeedbacks.map((feedback: any) => ({
+              title: feedback.title,
+              reviewer_feedback: feedback.reviewer_feedback,
+              ai_summary: feedback.ai_summary,
+              status: feedback.status,
+            })),
+            attachments: getContextDocuments({
+              phaseState,
+              student,
+              projects: studentProjects,
+              feedbacks: studentFeedbacks,
+              projectDocuments: workspace.projectDocuments,
+            }).map((item) => item.name),
+            peers: connectedPeers.map((peer: any) => ({
+              first_name: peer.first_name,
+              last_name: peer.last_name,
+            })),
+            mentors: connectedMentors,
+          },
+          messages: [],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Task AI tips failed with status ${response.status}`);
+      }
+
+      const data = (await response.json()) as { tips?: string[] };
+      const tips = Array.isArray(data.tips) ? data.tips.map((tip) => tip.trim()).filter(Boolean) : [];
+
+      setAiTipsByTask((current) => ({
+        ...current,
+        [milestone.id]: tips.length > 0 ? tips : fallbackTips,
+      }));
+    } catch {
+      setAiTipsByTask((current) => ({
+        ...current,
+        [milestone.id]: fallbackTips,
+      }));
+    } finally {
+      setLoadingAdviceIds((current) => current.filter((item) => item !== milestone.id));
+    }
+  };
+
   const openTaskChat = (phaseKey: string, milestoneId: string) => {
+    const phase = phaseState.find((item) => item.key === phaseKey);
+    const milestone = phase?.milestones.find((item) => item.id === milestoneId);
+
     setChatTask({ phaseKey, milestoneId });
     setChatInput("");
     setChatMessagesByTask((current) => ({
@@ -483,7 +583,9 @@ export default function StudentMilestones() {
           : [
               {
                 role: "assistant",
-                content: "Ask me for help on this task. I can use your project, feedback, profile, and uploaded documents.",
+                content: milestone
+                  ? buildTaskChatIntro(milestone)
+                  : "We’re working on this task. Tell me if you want the best first step, how to use your feedback, or how to turn your current documents into progress.",
               },
             ],
     }));
@@ -522,6 +624,7 @@ export default function StudentMilestones() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          intent: "chat",
           task: {
             title: milestone.title,
             description: milestone.description,
@@ -847,7 +950,9 @@ export default function StudentMilestones() {
                       feedbacks: studentFeedbacks,
                       projectDocuments: workspace.projectDocuments,
                     });
+                    const displayedAdvice = aiTipsByTask[milestone.id] || taskAdvice;
                     const isAdviceExpanded = expandedAdviceIds.includes(milestone.id);
+                    const isAdviceLoading = loadingAdviceIds.includes(milestone.id);
 
                     return (
                       <Card key={milestone.id} className="border shadow-none">
@@ -943,7 +1048,12 @@ export default function StudentMilestones() {
                             <div className="flex items-center gap-4">
                               <button
                                 type="button"
-                                onClick={() => toggleAdviceExpansion(milestone.id)}
+                                onClick={() => {
+                                  toggleAdviceExpansion(milestone.id);
+                                  if (!isAdviceExpanded) {
+                                    void loadTaskAdvice(group.key, milestone);
+                                  }
+                                }}
                                 className="inline-flex items-center gap-1 ds-caption text-ai hover:underline"
                               >
                                 <Sparkles className="h-3.5 w-3.5" />
@@ -962,7 +1072,10 @@ export default function StudentMilestones() {
                             {isAdviceExpanded && (
                               <div className="mt-2 rounded-xl border border-ai/20 bg-ai/5 p-3 space-y-2">
                                 <p className="ds-label text-ai">AI tips for this task</p>
-                                {taskAdvice.map((tip) => (
+                                {isAdviceLoading && displayedAdvice.length === 0 && (
+                                  <p className="ds-caption text-muted-foreground">Claude is preparing task-specific tips...</p>
+                                )}
+                                {displayedAdvice.map((tip) => (
                                   <p key={tip} className="ds-caption text-muted-foreground">
                                     {tip}
                                   </p>
