@@ -1,0 +1,11 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .icon { fill: #171717; }
+    @media (prefers-color-scheme: dark) {
+      .icon { fill: #ffffff; }
+    }
+  </style>
+  <path class="icon" d="M52 33.2128V44.3191L33.7385 33.838L32.6531 31.9659V22.1064L42.3284 16.5532V27.6596L52 33.2128Z"/>
+  <path class="icon" d="M41.6735 39.8936V51L31.9982 45.4468L22.3267 51L12.6551 45.4468L30.9165 34.962H33.0799L41.6735 39.8936Z"/>
+  <path class="icon" d="M31.3431 11V31.9659L30.2577 33.838L21.6716 38.7659L12 33.2127L21.6716 27.6595V16.5532L31.3431 11Z"/>
+</svg>
