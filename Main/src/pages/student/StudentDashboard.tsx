@@ -50,6 +50,9 @@ export default function StudentDashboard() {
   const [workspace, setWorkspace] = useState(() =>
     getInteractiveStudentWorkspace(DEMO_STUDENT),
   );
+  const [monthlyOwlChecks] = useState(() =>
+    Array.from({ length: 4 }, () => Math.random() > 0.4),
+  );
 
   const {
     student,
@@ -167,16 +170,43 @@ export default function StudentDashboard() {
     (document) => !studentProjects.some((project: any) => project.id === document.project_id),
   );
   const openPeerRequests = sharedDocumentRequests.filter((request) => request.student_id !== student?.id);
+  const currentMonthLabel = new Date().toLocaleString("en-US", { month: "long" });
 
   return (
     <div className="space-y-8 max-w-6xl">
-      <div>
-        <h1 className="ds-title-lg tracking-tight">
-          Hello, {student?.first_name || "Student"}
-        </h1>
-        <p className="ds-body text-muted-foreground mt-1">
-          Here's an overview of your thesis journey.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="ds-title-lg tracking-tight">
+            Hello, {student?.first_name || "Student"}
+          </h1>
+          <p className="ds-body text-muted-foreground mt-1">
+            Here's an overview of your thesis journey.
+          </p>
+        </div>
+
+        <div className="inline-flex items-center gap-3 rounded-2xl border bg-secondary px-4 py-2 shrink-0">
+          <div>
+            <p className="ds-caption text-muted-foreground">Current month</p>
+            <p className="ds-label">{currentMonthLabel}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {monthlyOwlChecks.map((didSubmit, index) => (
+              <div
+                key={`owl-week-${index}`}
+                className={`flex h-9 w-9 items-center justify-center rounded-full border text-sm ${
+                  didSubmit
+                    ? "border-emerald-200 bg-emerald-100"
+                    : "border-border bg-background text-muted-foreground"
+                }`}
+                aria-label={`Week ${index + 1}: ${didSubmit ? "submitted" : "missed"}`}
+              >
+                <span className={didSubmit ? "text-xl leading-none" : "text-base leading-none"} aria-hidden="true">
+                  {didSubmit ? "🦉" : "✕"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       <Link
