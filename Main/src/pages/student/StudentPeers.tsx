@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   useFields,
   usePeerConnections,
@@ -7,10 +8,20 @@ import {
 } from "@/hooks/useStudyondData";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Users, Sparkles, GraduationCap, Brain } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Users, Sparkles, GraduationCap, Brain, Mail, Send } from "lucide-react";
 import { buildPeerSuggestions } from "@/lib/peerMatching";
 
-const DEMO_STUDENT = "student-04";
+const DEMO_STUDENT = "student-11";
 
 const statusLabels: Record<string, string> = {
   suggested: "Suggested",
@@ -24,17 +35,40 @@ const statusColors: Record<string, string> = {
   declined: "bg-muted text-muted-foreground",
 };
 
+function formatPercent(value: number | null | undefined) {
+  return typeof value === "number" ? `${value}%` : null;
+}
+
+function getPrimaryProject(projects: any[], studentId: string) {
+  const studentProjects = projects.filter((project) => project.student_id === studentId);
+  return (
+    studentProjects.find(
+      (project) => project.state === "in_progress" || project.state === "agreed",
+    ) || studentProjects[0]
+  );
+}
+
 export default function StudentPeers() {
+  const [selectedPeerId, setSelectedPeerId] = useState<string | null>(null);
+  const [emailDraft, setEmailDraft] = useState<{ subject: string; body: string } | null>(null);
+  const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
   const { data: connections, isLoading } = usePeerConnections(DEMO_STUDENT);
   const { data: students } = useStudents();
   const { data: projects } = useThesisProjects();
   const { data: fields } = useFields();
-  const { data: thesisSimilarityByStudentId, isLoading: isThesisSimilarityLoading } =
-    usePeerThesisSimilarity(DEMO_STUDENT, students, projects);
+  const {
+    data: thesisSimilarityByStudentId,
+    isLoading: isThesisSimilarityLoading,
+    isError: isThesisSimilarityError,
+    error: thesisSimilarityError,
+    status: thesisSimilarityStatus,
+  } = usePeerThesisSimilarity(DEMO_STUDENT, students, projects);
 
   const getStudent = (id: string) => students?.find((s: any) => s.id === id);
   const getPeer = (conn: any) =>
     getStudent(conn.student_a_id === DEMO_STUDENT ? conn.student_b_id : conn.student_a_id);
+  const currentStudent = getStudent(DEMO_STUDENT);
+  const currentProject = projects ? getPrimaryProject(projects, DEMO_STUDENT) : null;
 
   const suggestions =
     students && projects
@@ -46,13 +80,96 @@ export default function StudentPeers() {
           thesisSimilarityByStudentId,
         })
       : [];
-    
-  console.log("thesisSimilarityByStudentId", thesisSimilarityByStudentId);
-  console.log("suggestions", suggestions);
-
+  const thesisSimilarityDebug = thesisSimilarityByStudentId?.__debug ?? null;
+  const ollamaScores = Object.entries(thesisSimilarityByStudentId ?? {}).filter(
+    ([studentId, value]) => studentId !== "__debug" && typeof value?.score === "number",
+  );
+  const debugPayload = {
+    thesisSimilarityQuery: {
+      status: thesisSimilarityStatus,
+      isLoading: isThesisSimilarityLoading,
+      isError: isThesisSimilarityError,
+      error:
+        thesisSimilarityError instanceof Error
+          ? thesisSimilarityError.message
+          : thesisSimilarityError ?? null,
+      hasData: thesisSimilarityByStudentId !== undefined,
+    },
+    hasPositiveOllamaScores: ollamaScores.some(([, value]) => value.score > 0),
+    thesisSimilarityDebug,
+    ollamaScoresByStudentId: Object.fromEntries(ollamaScores),
+    topRecommendations: suggestions.slice(0, 3).map((suggestion) => ({
+      studentId: suggestion.student.id,
+      studentName: `${suggestion.student.first_name} ${suggestion.student.last_name}`,
+      ollamaRawScore: formatPercent(
+        thesisSimilarityByStudentId?.[suggestion.student.id]?.score ?? null,
+      ),
+      ollamaReason: thesisSimilarityByStudentId?.[suggestion.student.id]?.reason ?? null,
+      rankingThesisScore: formatPercent(suggestion.thesisSimilarityScore),
+      finalMatchScore: formatPercent(suggestion.score),
+    })),
+  };
 
   const isPageLoading =
     isLoading || !students || !projects || !fields || isThesisSimilarityLoading;
+  const selectedSuggestion =
+    suggestions.find((suggestion) => suggestion.student.id === selectedPeerId) || null;
+
+  const openEmailDialog = async (peerId: string) => {
+    if (!students || !projects || !currentStudent) return;
+
+    const suggestion = suggestions.find((item) => item.student.id === peerId);
+    if (!suggestion) return;
+
+    const peerProject = getPrimaryProject(projects, peerId);
+    setSelectedPeerId(peerId);
+    setEmailDraft(null);
+    setIsGeneratingEmail(true);
+
+    try {
+      const response = await fetch("/api/peer-intro-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          currentStudent,
+          currentProject,
+          peerStudent: suggestion.student,
+          peerProject: peerProject
+            ? {
+                title: peerProject.title,
+                description: peerProject.description,
+                motivation: peerProject.motivation,
+              }
+            : null,
+          thesisSimilarityScore: thesisSimilarityByStudentId?.[peerId]?.score ?? null,
+          thesisSimilarityReason: thesisSimilarityByStudentId?.[peerId]?.reason ?? null,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Email generation failed with status ${response.status}`);
+      }
+
+      const data = (await response.json()) as { subject: string; body: string };
+      setEmailDraft(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      setEmailDraft({
+        subject: "Thesis collaboration opportunity",
+        body: `Hi ${suggestion.student.first_name},\n\nI noticed some overlap between our thesis work and thought it could be interesting to connect.\n\nWould you be open to a short exchange?\n\nBest,\n${currentStudent.first_name} ${currentStudent.last_name}\n\nGeneration fallback: ${message}`,
+      });
+    } finally {
+      setIsGeneratingEmail(false);
+    }
+  };
+
+  const closeEmailDialog = () => {
+    setSelectedPeerId(null);
+    setEmailDraft(null);
+    setIsGeneratingEmail(false);
+  };
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -62,6 +179,15 @@ export default function StudentPeers() {
           Connect with peers and mentors around your thesis.
         </p>
       </div>
+
+      <Card className="border border-amber-300 bg-amber-50 shadow-none">
+        <CardContent className="pt-6">
+          <p className="ds-label text-amber-900">Debug Ollama thesis scores</p>
+          <pre className="mt-3 overflow-x-auto whitespace-pre-wrap text-xs text-amber-950">
+            {JSON.stringify(debugPayload, null, 2)}
+          </pre>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         {/* Colonne gauche : Peers */}
@@ -126,7 +252,7 @@ export default function StudentPeers() {
                             <div className="flex items-center gap-2 text-ai">
                               <Brain className="h-4 w-4" />
                               <span className="ds-label">
-                                AI thesis similarity {suggestion.thesisSimilarityScore}
+                                AI thesis similarity {formatPercent(suggestion.thesisSimilarityScore)}
                               </span>
                             </div>
                             {suggestion.thesisSimilarityReason && (
@@ -152,8 +278,18 @@ export default function StudentPeers() {
                         )}
 
                         <Badge className="border-0 bg-ai/15 text-ai">
-                          Match score {suggestion.score}
+                          Match score {formatPercent(suggestion.score)}
                         </Badge>
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => openEmailDialog(suggestion.student.id)}
+                        >
+                          <Mail className="h-4 w-4" />
+                          Generate outreach email
+                        </Button>
                       </CardContent>
                     </Card>
                   ))}
@@ -256,6 +392,38 @@ export default function StudentPeers() {
           </Card>
         </section>
       </div>
+
+      <Dialog open={Boolean(selectedPeerId)} onOpenChange={(open) => !open && closeEmailDialog()}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              AI email draft{selectedSuggestion ? ` for ${selectedSuggestion.student.first_name}` : ""}
+            </DialogTitle>
+            <DialogDescription>
+              This draft uses your profile, the peer profile, and thesis overlap.
+            </DialogDescription>
+          </DialogHeader>
+
+          {isGeneratingEmail ? (
+            <p className="text-sm text-muted-foreground">Generating email...</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm">
+                <span className="font-medium">Subject:</span>{" "}
+                {emailDraft?.subject || "No subject generated."}
+              </div>
+              <Textarea value={emailDraft?.body || ""} readOnly className="min-h-[260px]" />
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button type="button" onClick={closeEmailDialog} disabled={isGeneratingEmail}>
+              <Send className="h-4 w-4" />
+              Send
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

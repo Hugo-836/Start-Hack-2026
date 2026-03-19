@@ -18,6 +18,18 @@ export type ThesisSimilarityMatch = {
   reason: string;
 };
 
+const MAX_THESIS_SIMILARITY_SCORE = 90;
+const MAX_FIELD_SCORE = 40;
+const MAX_SKILL_SCORE = 30;
+const MAX_OBJECTIVE_SCORE = 20;
+const SAME_UNIVERSITY_SCORE = 10;
+const MAX_TOTAL_SCORE =
+  MAX_THESIS_SIMILARITY_SCORE +
+  MAX_FIELD_SCORE +
+  MAX_SKILL_SCORE +
+  MAX_OBJECTIVE_SCORE +
+  SAME_UNIVERSITY_SCORE;
+
 function unique(values: string[]) {
   return [...new Set(values.filter(Boolean))];
 }
@@ -79,16 +91,17 @@ export function buildPeerSuggestions(args: {
         currentStudent.university_id === student.university_id;
       const thesisSimilarity = thesisSimilarityByStudentId[student.id];
       const thesisSimilarityScore = Math.min(
-        90,
+        MAX_THESIS_SIMILARITY_SCORE,
         Math.max(0, Math.round((thesisSimilarity?.score || 0) * 0.9)),
       );
 
-      let score = 0;
-      if (thesisSimilarityScore) score += thesisSimilarityScore;
-      if (sharedFieldNames.length) score += Math.min(40, sharedFieldNames.length * 20);
-      if (sharedSkills.length) score += Math.min(30, sharedSkills.length * 10);
-      if (sharedObjectives.length) score += Math.min(20, sharedObjectives.length * 10);
-      if (sameUniversity) score += 10;
+      let rawScore = 0;
+      if (thesisSimilarityScore) rawScore += thesisSimilarityScore;
+      if (sharedFieldNames.length) rawScore += Math.min(MAX_FIELD_SCORE, sharedFieldNames.length * 20);
+      if (sharedSkills.length) rawScore += Math.min(MAX_SKILL_SCORE, sharedSkills.length * 10);
+      if (sharedObjectives.length) rawScore += Math.min(MAX_OBJECTIVE_SCORE, sharedObjectives.length * 10);
+      if (sameUniversity) rawScore += SAME_UNIVERSITY_SCORE;
+      const score = Math.round((rawScore / MAX_TOTAL_SCORE) * 100);
 
       const sharedTopics = unique([
         ...sharedFieldNames,

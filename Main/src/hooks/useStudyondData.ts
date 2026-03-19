@@ -12,6 +12,26 @@ type ThesisSimilarityResponse = {
   }>;
 };
 
+type ThesisSimilarityResult = Record<
+  string,
+  {
+    score: number;
+    reason: string;
+  }
+>;
+
+type ThesisSimilarityDebug = {
+  source: "ollama-local" | "none";
+  localApiStatus: number | null;
+  localApiError: string | null;
+  candidateCount: number;
+  matchCount: number;
+};
+
+export type PeerThesisSimilarityData = ThesisSimilarityResult & {
+  __debug?: ThesisSimilarityDebug;
+};
+
 function getPrimaryProject(projects: ThesisProject[], studentId: string) {
   const studentProjects = projects.filter((project) => project.student_id === studentId);
   return (
@@ -196,11 +216,7 @@ export function usePeerThesisSimilarity(
           .filter(Boolean)
       : [];
 
-  console.log("usePeerThesisSimilarity currentStudent", currentStudent);
-  console.log("usePeerThesisSimilarity currentProject", currentProject);
-  console.log("usePeerThesisSimilarity candidateProjects", candidateProjects);
-
-  return useQuery({
+  return useQuery<PeerThesisSimilarityData>({
     queryKey: [
       "peer-thesis-similarity",
       currentStudentId,
@@ -212,54 +228,93 @@ export function usePeerThesisSimilarity(
     ],
     queryFn: async () => {
       if (!currentStudent || !currentProject || candidateProjects.length === 0) {
-        console.log("usePeerThesisSimilarity skipped", {
-          hasCurrentStudent: Boolean(currentStudent),
-          hasCurrentProject: Boolean(currentProject),
-          candidateProjectsCount: candidateProjects.length,
-        });
-        return {};
+        return {
+          __debug: {
+            source: "none",
+            localApiStatus: null,
+            localApiError: null,
+            candidateCount: candidateProjects.length,
+            matchCount: 0,
+          },
+        };
       }
 
-      const { data, error } = await supabase.functions.invoke<ThesisSimilarityResponse>(
-        "peer-thesis-similarity",
-        {
-          body: {
-            currentStudent: {
-              id: currentStudent.id,
-              name: `${currentStudent.first_name} ${currentStudent.last_name}`,
-              degree: currentStudent.degree,
-              universityId: currentStudent.university_id,
-              skills: currentStudent.skills,
-              objectives: currentStudent.objectives,
-              fieldIds: currentStudent.field_ids,
-              about: currentStudent.about,
-            },
-            currentThesis: {
-              title: currentProject.title,
-              description: currentProject.description,
-              motivation: currentProject.motivation,
-            },
-            candidates: candidateProjects,
-          },
+      const requestBody = {
+        currentStudent: {
+          id: currentStudent.id,
+          name: `${currentStudent.first_name} ${currentStudent.last_name}`,
+          degree: currentStudent.degree,
+          universityId: currentStudent.university_id,
+          skills: currentStudent.skills,
+          objectives: currentStudent.objectives,
+          fieldIds: currentStudent.field_ids,
+          about: currentStudent.about,
         },
-      );
+        currentThesis: {
+          title: currentProject.title,
+          description: currentProject.description,
+          motivation: currentProject.motivation,
+        },
+        candidates: candidateProjects,
+      };
 
-      if (error) {
-        console.warn("peer-thesis-similarity invoke failed", error);
-        return {};
-      }
+      const toMatchMap = (data?: ThesisSimilarityResponse | null): ThesisSimilarityResult =>
+        Object.fromEntries(
+          (data?.matches || []).map((match) => [
+            match.studentId,
+            {
+              score: match.score,
+              reason: match.reason,
+            },
+          ]),
+        );
 
-      console.log("peer-thesis-similarity raw data", data);
+      let localApiStatus: number | null = null;
+      let localApiError: string | null = null;
 
-      return Object.fromEntries(
-        (data?.matches || []).map((match) => [
-          match.studentId,
-          {
-            score: match.score,
-            reason: match.reason,
+      try {
+        const localResponse = await fetch("/api/peer-thesis-similarity", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
           },
-        ]),
-      );
+          body: JSON.stringify(requestBody),
+        });
+
+        localApiStatus = localResponse.status;
+
+        if (localResponse.ok) {
+          const data = (await localResponse.json()) as ThesisSimilarityResponse;
+          const result = toMatchMap(data);
+          return {
+            ...result,
+            __debug: {
+              source: "ollama-local",
+              localApiStatus,
+              localApiError: null,
+              candidateCount: candidateProjects.length,
+              matchCount: Object.keys(result).length,
+            },
+          };
+        }
+
+        const errorPayload = await localResponse.json().catch(() => null);
+        localApiError =
+          errorPayload && typeof errorPayload.error === "string"
+            ? errorPayload.error
+            : `Local API failed with status ${localResponse.status}`;
+      } catch {
+        localApiError = "Local API request failed.";
+      }
+      return {
+        __debug: {
+          source: "none",
+          localApiStatus,
+          localApiError,
+          candidateCount: candidateProjects.length,
+          matchCount: 0,
+        },
+      };
     },
     enabled: Boolean(currentStudent && currentProject && candidateProjects.length > 0),
     staleTime: 1000 * 60 * 10,

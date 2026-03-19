@@ -95,7 +95,7 @@ describe("buildPeerSuggestions", () => {
 
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0].student.id).toBe("student-2");
-    expect(suggestions[0].score).toBe(50);
+    expect(suggestions[0].score).toBe(26);
     expect(suggestions[0].sharedTopics).toContain("artificial intelligence");
     expect(suggestions[0].matchReason).toContain("Same degree");
     expect(suggestions[0].thesisSimilarityScore).toBe(0);
@@ -172,6 +172,7 @@ describe("buildPeerSuggestions", () => {
 
     expect(suggestions).toHaveLength(2);
     expect(suggestions[0].student.id).toBe("student-2");
+    expect(suggestions[0].score).toBe(66);
     expect(suggestions[0].thesisSimilarityScore).toBe(86);
     expect(suggestions[0].matchReason).toContain("AI thesis match");
   });
