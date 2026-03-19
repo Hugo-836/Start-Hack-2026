@@ -133,7 +133,6 @@ export function buildPeerSuggestions(args: {
         thesisSimilarityReason: thesisSimilarity?.reason || null,
       };
     })
-    .filter((suggestion) => suggestion.score > 0)
     .sort((left, right) => right.score - left.score)
     .slice(0, limit);
 }
