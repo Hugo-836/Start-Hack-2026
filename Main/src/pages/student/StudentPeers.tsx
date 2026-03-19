@@ -296,119 +296,100 @@ export default function StudentPeers() {
 
           {isPageLoading ? (
             <p className="text-muted-foreground">Loading...</p>
-          ) : !connections?.length ? (
-            suggestions.length ? (
-              <div className="space-y-4">
-                <Card className="border shadow-none bg-ai/5">
-                  <CardContent className="pt-6">
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5 rounded-full border border-ai/30 bg-background p-2 text-ai">
-                        <Sparkles className="h-4 w-4" />
-                      </div>
-                      <div>
-                        <p className="ds-label text-ai">AI peer matching active</p>
-                        <p className="ds-small text-muted-foreground mt-1">
-                          Suggested peers are ranked from shared thesis themes, skills,
-                          objectives, and academic field overlap.
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <div className="space-y-4">
-                  {suggestions.map((suggestion) => (
-                    <Card
-                      key={suggestion.student.id}
-                      className="border shadow-none hover:shadow-md transition-shadow duration-300"
-                    >
-                      <CardContent className="pt-6 space-y-3">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center ds-label">
-                            {suggestion.student.first_name[0]}
-                            {suggestion.student.last_name[0]}
-                          </div>
-                          <div>
-                            <p className="ds-label">
-                              {suggestion.student.first_name} {suggestion.student.last_name}
-                            </p>
-                            <p className="ds-caption text-muted-foreground capitalize">
-                              {suggestion.student.degree}
-                            </p>
-                          </div>
-                        </div>
-
-                        <p className="ds-small text-muted-foreground">
-                          {suggestion.matchReason}
-                        </p>
-
-                        {suggestion.thesisSimilarityScore > 0 && (
-                          <div className="rounded-lg border border-ai/20 bg-ai/5 px-3 py-2">
-                            <div className="flex items-center gap-2 text-ai">
-                              <Brain className="h-4 w-4" />
-                              <span className="ds-label">
-                                AI thesis similarity {formatPercent(suggestion.thesisSimilarityScore)}
-                              </span>
-                            </div>
-                            {suggestion.thesisSimilarityReason && (
-                              <p className="ds-small text-muted-foreground mt-1">
-                                {suggestion.thesisSimilarityReason}
-                              </p>
-                            )}
-                          </div>
-                        )}
-
-                        {suggestion.sharedTopics.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5">
-                            {suggestion.sharedTopics.map((topic) => (
-                              <Badge
-                                key={topic}
-                                variant="secondary"
-                                className="ds-badge"
-                              >
-                                {topic}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-
-                        <Badge className="border-0 bg-ai/15 text-ai">
-                          Match score {formatPercent(suggestion.score)}
-                        </Badge>
-
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="w-full"
-                          onClick={() => openEmailDialog(suggestion.student.id)}
-                        >
-                          <Mail className="h-4 w-4" />
-                          Generate outreach email
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <Card className="border shadow-none">
-                <CardContent className="pt-6 text-center">
-                  <Users className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-                  <p className="ds-body text-muted-foreground">No peer connections yet.</p>
-                  <div className="mt-4 p-4 rounded-lg border border-ai inline-block">
-                    <div className="flex items-center gap-2 text-ai">
+          ) : suggestions.length ? (
+            <div className="space-y-4">
+              <Card className="border shadow-none bg-ai/5">
+                <CardContent className="pt-6">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 rounded-full border border-ai/30 bg-background p-2 text-ai">
                       <Sparkles className="h-4 w-4" />
-                      <span className="ds-label">No AI matches found yet</span>
                     </div>
-                    <p className="ds-small text-muted-foreground mt-1">
-                      Add more thesis details and skills to generate stronger peer
-                      recommendations.
-                    </p>
+                    <div>
+                      <p className="ds-label text-ai">AI peer matching active</p>
+                      <p className="ds-small text-muted-foreground mt-1">
+                        Suggested peers are ranked from shared thesis themes, skills,
+                        objectives, academic field overlap, and Claude thesis compatibility.
+                      </p>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
-            )
-          ) : (
+
+              <div className="space-y-4">
+                {suggestions.map((suggestion) => (
+                  <Card
+                    key={suggestion.student.id}
+                    className="border shadow-none hover:shadow-md transition-shadow duration-300"
+                  >
+                    <CardContent className="pt-6 space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center ds-label">
+                          {suggestion.student.first_name[0]}
+                          {suggestion.student.last_name[0]}
+                        </div>
+                        <div>
+                          <p className="ds-label">
+                            {suggestion.student.first_name} {suggestion.student.last_name}
+                          </p>
+                          <p className="ds-caption text-muted-foreground capitalize">
+                            {suggestion.student.degree}
+                          </p>
+                        </div>
+                      </div>
+
+                      <p className="ds-small text-muted-foreground">
+                        {suggestion.matchReason}
+                      </p>
+
+                      {suggestion.thesisSimilarityScore > 0 && (
+                        <div className="rounded-lg border border-ai/20 bg-ai/5 px-3 py-2">
+                          <div className="flex items-center gap-2 text-ai">
+                            <Brain className="h-4 w-4" />
+                            <span className="ds-label">
+                              AI thesis similarity {formatPercent(suggestion.thesisSimilarityScore)}
+                            </span>
+                          </div>
+                          {suggestion.thesisSimilarityReason && (
+                            <p className="ds-small text-muted-foreground mt-1">
+                              {suggestion.thesisSimilarityReason}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {suggestion.sharedTopics.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {suggestion.sharedTopics.map((topic) => (
+                            <Badge
+                              key={topic}
+                              variant="secondary"
+                              className="ds-badge"
+                            >
+                              {topic}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+
+                      <Badge className="border-0 bg-ai/15 text-ai">
+                        Match score {formatPercent(suggestion.score)}
+                      </Badge>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => openEmailDialog(suggestion.student.id)}
+                      >
+                        <Mail className="h-4 w-4" />
+                        Generate outreach email
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          ) : connections?.length ? (
             <div className="space-y-4">
               {connections.map((conn: any) => {
                 const peer = getPeer(conn);
@@ -459,6 +440,23 @@ export default function StudentPeers() {
                 );
               })}
             </div>
+          ) : (
+            <Card className="border shadow-none">
+              <CardContent className="pt-6 text-center">
+                <Users className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+                <p className="ds-body text-muted-foreground">No peer connections yet.</p>
+                <div className="mt-4 p-4 rounded-lg border border-ai inline-block">
+                  <div className="flex items-center gap-2 text-ai">
+                    <Sparkles className="h-4 w-4" />
+                    <span className="ds-label">No AI matches found yet</span>
+                  </div>
+                  <p className="ds-small text-muted-foreground mt-1">
+                    Add more thesis details and skills to generate stronger peer
+                    recommendations.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
           )}
         </section>
 
