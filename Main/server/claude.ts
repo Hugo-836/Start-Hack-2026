@@ -32,6 +32,7 @@ export async function generateJsonWithClaude(
     apiKey?: string;
     model?: string;
     maxTokens?: number;
+    timeoutMs?: number;
   },
 ) {
   const apiKey = options?.apiKey;
@@ -39,26 +40,42 @@ export async function generateJsonWithClaude(
     throw new Error("Missing ANTHROPIC_API_KEY in Main/.env");
   }
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: options?.model || "claude-3-5-sonnet-latest",
-      max_tokens: options?.maxTokens || 900,
-      system:
-        "You are a precise academic thesis assistant. Always return valid JSON only, with no prose outside the JSON object.",
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutMs = options?.timeoutMs ?? 12000;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: options?.model || "claude-3-5-sonnet-latest",
+        max_tokens: options?.maxTokens || 900,
+        system:
+          "You are a precise academic thesis assistant. Always return valid JSON only, with no prose outside the JSON object.",
+        messages: [
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+      }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Claude request timed out after ${timeoutMs}ms.`);
+    }
+    throw error;
+  }
+
+  clearTimeout(timeoutId);
 
   const payload = (await response.json().catch(() => null)) as ClaudeResponse | null;
 

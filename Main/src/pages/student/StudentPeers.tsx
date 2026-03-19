@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   useMentorMatches,
   usePeerThesisSimilarity,
@@ -18,7 +18,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Users, Sparkles, GraduationCap, Brain, Mail, Send, UserRoundSearch, CheckCircle2 } from "lucide-react";
 import { buildPeerSuggestions } from "@/lib/peerMatching";
-import { DEMO_STUDENT, getInteractiveStudentWorkspace } from "@/lib/interactiveMilestones";
+import {
+  DEMO_STUDENT,
+  getInteractiveStudentWorkspace,
+  INTERACTIVE_WORKSPACE_EVENT,
+} from "@/lib/interactiveMilestones";
 
 const statusLabels: Record<string, string> = {
   suggested: "Suggested",
@@ -53,13 +57,23 @@ export default function StudentPeers() {
   const [mentorDialogId, setMentorDialogId] = useState<string | null>(null);
   const [mentorEmailDraft, setMentorEmailDraft] = useState<{ subject: string; body: string } | null>(null);
   const [isGeneratingMentorEmail, setIsGeneratingMentorEmail] = useState(false);
-
-  const workspace = getInteractiveStudentWorkspace(DEMO_STUDENT);
+  const [workspace, setWorkspace] = useState(() => getInteractiveStudentWorkspace(DEMO_STUDENT));
   const connections = workspace.peerConnections;
   const students = workspace.students;
   const projects = workspace.projects;
   const fields = workspace.fields;
   const mentors = workspace.mockMentors;
+
+  useEffect(() => {
+    const syncWorkspace = () => setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
+    window.addEventListener(INTERACTIVE_WORKSPACE_EVENT, syncWorkspace);
+    window.addEventListener("focus", syncWorkspace);
+
+    return () => {
+      window.removeEventListener(INTERACTIVE_WORKSPACE_EVENT, syncWorkspace);
+      window.removeEventListener("focus", syncWorkspace);
+    };
+  }, []);
 
   const {
     data: thesisSimilarityByStudentId,
@@ -100,7 +114,6 @@ export default function StudentPeers() {
       mentor,
       match: mentorMatchesById?.[mentor.id] || null,
     }))
-    .filter((item) => item.match?.score)
     .sort((a, b) => (b.match?.score || 0) - (a.match?.score || 0))
     .slice(0, 3);
   const prioritizedMentorSuggestions = selectedMentorId
@@ -160,8 +173,7 @@ export default function StudentPeers() {
     })),
   };
 
-  const isPageLoading =
-    !students.length || !projects.length || !fields.length || isThesisSimilarityLoading || isMentorMatchesLoading;
+  const hasCoreWorkspaceData = students.length > 0 && projects.length > 0 && fields.length > 0;
 
   const selectedSuggestion =
     suggestions.find((suggestion) => suggestion.student.id === selectedPeerId) || null;
@@ -293,10 +305,15 @@ export default function StudentPeers() {
             </p>
           </div>
 
-          {isPageLoading ? (
+          {!hasCoreWorkspaceData ? (
             <p className="text-muted-foreground">Loading...</p>
           ) : suggestions.length ? (
             <div className="space-y-4">
+              {isThesisSimilarityLoading ? (
+                <p className="ds-small text-muted-foreground">
+                  Refining peer matches with AI...
+                </p>
+              ) : null}
               <div className="space-y-4">
                 {suggestions.map((suggestion) => (
                   <Card
@@ -450,10 +467,15 @@ export default function StudentPeers() {
               Find supervisors and experts related to your thesis.
             </p>
           </div>
-          {isPageLoading || isMentorMatchesLoading ? (
+          {!hasCoreWorkspaceData ? (
             <p className="text-muted-foreground">Loading...</p>
           ) : mentorSuggestions.length ? (
             <div className="space-y-4">
+              {isMentorMatchesLoading ? (
+                <p className="ds-small text-muted-foreground">
+                  Refining mentor matches with AI...
+                </p>
+              ) : null}
               {prioritizedMentorSuggestions.map(({ mentor, match }) => {
                 const isPreferredMentor = selectedMentorId === mentor.id;
                 const hasPreferredMentor = Boolean(selectedMentorId);
@@ -545,7 +567,11 @@ export default function StudentPeers() {
             <Card className="border shadow-none">
               <CardContent className="pt-6 text-center">
                 <GraduationCap className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-                <p className="ds-body text-muted-foreground">No mentor matches found yet.</p>
+                <p className="ds-body text-muted-foreground">
+                  {isMentorMatchesLoading
+                    ? "Mentor matching is taking longer than expected."
+                    : "No mentor matches found yet."}
+                </p>
               </CardContent>
             </Card>
           )}
