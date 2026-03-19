@@ -810,7 +810,7 @@ export default function StudentDashboard() {
                 Get Feedback
               </p>
               <p className="ds-small text-muted-foreground mt-1">
-                Send your work to a supervisor for review.
+                Send your work to a supervisor/mentor for review.
               </p>
             </CardContent>
           </Card>
