@@ -275,15 +275,6 @@ export default function StudentPeers() {
         </p>
       </div>
 
-      <Card className="border border-amber-300 bg-amber-50 shadow-none">
-        <CardContent className="pt-6">
-          <p className="ds-label text-amber-900">Debug Claude thesis scores</p>
-          <pre className="mt-3 overflow-x-auto whitespace-pre-wrap text-xs text-amber-950">
-            {JSON.stringify(debugPayload, null, 2)}
-          </pre>
-        </CardContent>
-      </Card>
-
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         {/* Colonne gauche : Peers */}
         <section className="space-y-4">
