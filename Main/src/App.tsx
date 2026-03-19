@@ -16,7 +16,6 @@ import StudentSharedDocuments from "./pages/student/StudentSharedDocuments";
 import MentorDashboard from "./pages/mentor/MentorDashboard";
 import MentorStudents from "./pages/mentor/MentorStudents";
 import MentorFeedback from "./pages/mentor/MentorFeedback";
-import { DemoAuthProvider, useDemoAuth } from "@/lib/demoAuth";
 
 const queryClient = new QueryClient();
 
@@ -37,25 +36,23 @@ function RootRedirect() {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <DemoAuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<RootRedirect />} />
-            <Route path="/auth" element={<AuthPage />} />
+    <TooltipProvider>
+      <Toaster />
+      <Sonner />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Navigate to="/student" replace />} />
 
-            <Route element={<ProtectedStudentRoutes />}>
-              <Route path="/student" element={<StudentDashboard />} />
-              <Route path="/student/project" element={<StudentProject />} />
-              <Route path="/student/milestones" element={<StudentMilestones />} />
-              <Route path="/student/67" element={<StudentSixtySeven />} />
-              <Route path="/student/feedback" element={<StudentFeedback />} />
-              <Route path="/student/peers" element={<StudentPeers />} />
-              <Route path="/student/shared-documents" element={<StudentSharedDocuments />} />
-              <Route path="/student/mentors" element={<StudentSharedDocuments />} />
-            </Route>
+          <Route element={<DashboardLayout />}>
+            <Route path="/student" element={<StudentDashboard />} />
+            <Route path="/student/project" element={<StudentProject />} />
+            <Route path="/student/milestones" element={<StudentMilestones />} />
+            <Route path="/student/67" element={<StudentSixtySeven />} />
+            <Route path="/student/feedback" element={<StudentFeedback />} />
+            <Route path="/student/peers" element={<StudentPeers />} />
+            <Route path="/student/shared-documents" element={<StudentSharedDocuments />} />
+            <Route path="/student/mentors" element={<StudentSharedDocuments />} />
+          </Route>
 
             <Route element={<DashboardLayout />}>
               <Route path="/mentor" element={<MentorDashboard />} />
@@ -63,11 +60,10 @@ const App = () => (
               <Route path="/mentor/feedback" element={<MentorFeedback />} />
             </Route>
 
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-    </DemoAuthProvider>
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </BrowserRouter>
+    </TooltipProvider>
   </QueryClientProvider>
 );
 
