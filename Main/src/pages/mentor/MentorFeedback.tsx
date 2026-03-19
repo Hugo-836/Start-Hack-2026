@@ -8,8 +8,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { MessageSquare, Send, CheckCheck, RotateCcw, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "@/components/ui/sonner";
 import { useQueryClient } from "@tanstack/react-query";
+import { useMentorSelection } from "@/contexts/MentorSelectionContext";
+import { getMentorProfileBySupervisorId } from "@/lib/mentorProfiles";
 
-const DEMO_SUPERVISOR = "supervisor-01";
 const statusConfig: Record<string, { icon: any; color: string; label: string; badgeClass: string }> = {
   pending: { icon: Send, color: "text-muted-foreground", label: "Pending", badgeClass: "bg-muted text-muted-foreground" },
   submitted: { icon: MessageSquare, color: "text-blue-600", label: "Submitted", badgeClass: "bg-blue-100 text-blue-800" },
@@ -21,11 +22,13 @@ export default function MentorFeedback() {
   const { data: feedbacks, isLoading } = useFeedbackLoops();
   const { data: students } = useStudents();
   const queryClient = useQueryClient();
+  const { selectedSupervisorId } = useMentorSelection();
+  const mentorProfile = getMentorProfileBySupervisorId(selectedSupervisorId);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [feedbackText, setFeedbackText] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState<string | null>(null);
 
-  const myFeedbacks = feedbacks?.filter((fb: any) => fb.reviewer_id === DEMO_SUPERVISOR && fb.reviewer_type === "supervisor") || [];
+  const myFeedbacks = feedbacks?.filter((fb: any) => fb.reviewer_id === selectedSupervisorId && fb.reviewer_type === "supervisor") || [];
   const getStudent = (id: string) => students?.find((s: any) => s.id === id);
 
   const handleSubmitFeedback = async (feedbackId: string) => {
@@ -45,7 +48,7 @@ export default function MentorFeedback() {
 
   return (
     <div className="space-y-6 max-w-4xl">
-      <div><h1 className="ds-title-lg tracking-tight">Feedback</h1><p className="ds-body text-muted-foreground mt-1">Review student submissions and provide structured feedback.</p></div>
+      <div><h1 className="ds-title-lg tracking-tight">Feedback</h1><p className="ds-body text-muted-foreground mt-1">Review student submissions and provide structured feedback for {mentorProfile?.fullName ?? "this mentor"}.</p></div>
       {isLoading ? <p className="text-muted-foreground">Loading...</p> : myFeedbacks.length === 0 ? (
         <Card className="border shadow-none"><CardContent className="pt-6 text-center"><MessageSquare className="h-10 w-10 mx-auto text-muted-foreground mb-3" /><p className="ds-body text-muted-foreground">No feedback submissions yet.</p><p className="ds-small text-muted-foreground mt-1">Your students can submit their work for review.</p></CardContent></Card>
       ) : myFeedbacks.map((fb: any) => {

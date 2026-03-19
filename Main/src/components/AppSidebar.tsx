@@ -4,7 +4,7 @@ import {
   SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar,
 } from "@/components/ui/sidebar";
 import { NavLink } from "@/components/NavLink";
-import { GraduationCap, LayoutDashboard, MessageSquare, Milestone, Users, BookOpen, FolderOpen, UserCheck } from "lucide-react";
+import { GraduationCap, LayoutDashboard, MessageSquare, Milestone, Users, BookOpen, FolderOpen, UserCheck, Inbox } from "lucide-react";
 import { useDemoAuth } from "@/lib/demoAuth";
 
 const studentItems = [
@@ -19,6 +19,7 @@ const studentItems = [
 const mentorItems = [
   { title: "Dashboard", url: "/mentor", icon: LayoutDashboard },
   { title: "Students", url: "/mentor/students", icon: GraduationCap },
+  { title: "Requests", url: "/mentor/requests", icon: Inbox },
   { title: "Feedback", url: "/mentor/feedback", icon: MessageSquare },
 ];
 
