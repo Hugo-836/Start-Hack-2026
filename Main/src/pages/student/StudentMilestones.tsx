@@ -6,7 +6,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { CheckCircle2, Circle, Clock, AlertTriangle } from "lucide-react";
 import {
   DEMO_STUDENT,
-  createGeneratedMilestone,
   loadInteractiveMilestones,
   type MilestoneStatus,
   type PhaseState,
@@ -31,18 +30,11 @@ export default function StudentMilestones() {
     }
   }, [isLoading, milestones]);
 
-  useEffect(() => {
-    if (!isLoading) {
-      saveInteractiveMilestones(phaseState);
-    }
-  }, [isLoading, phaseState]);
-
   const toggleMilestone = (phaseKey: string, milestoneId: string, checked: boolean) => {
-    setPhaseState((current) =>
+    setPhaseState((current) => {
+      const nextState =
       current.map((phase) => {
         if (phase.key !== phaseKey) return phase;
-
-        const alreadyCompleted = phase.milestones.find((milestone) => milestone.id === milestoneId)?.status === "completed";
 
         const updatedMilestones = phase.milestones.map((milestone) =>
           milestone.id === milestoneId
@@ -50,29 +42,15 @@ export default function StudentMilestones() {
             : milestone,
         );
 
-        if (!checked || alreadyCompleted) {
-          return { ...phase, milestones: updatedMilestones };
-        }
-
-        if (phase.hiddenMilestones.length > 0) {
-          const [nextMilestone, ...remainingHiddenMilestones] = phase.hiddenMilestones;
-
-          return {
-            ...phase,
-            milestones: [...updatedMilestones, nextMilestone],
-            hiddenMilestones: remainingHiddenMilestones,
-          };
-        }
-
-        const generatedIndex = updatedMilestones.filter((milestone) => milestone.id.startsWith(`${phase.key}-generated-`)).length + 1;
-        const generatedMilestone = createGeneratedMilestone(phase.key, generatedIndex);
-
         return {
           ...phase,
-          milestones: [...updatedMilestones, generatedMilestone],
+          milestones: updatedMilestones,
         };
-      }),
-    );
+      });
+
+      saveInteractiveMilestones(nextState);
+      return nextState;
+    });
   };
 
   return (

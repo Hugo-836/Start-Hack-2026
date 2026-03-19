@@ -109,16 +109,6 @@ function toMilestoneItem(milestone: any): MilestoneItem {
   };
 }
 
-export function createGeneratedMilestone(phaseKey: string, index: number): MilestoneItem {
-  return {
-    id: `${phaseKey}-generated-${index}`,
-    title: `Next step ${index}`,
-    description: "New milestone unlocked after completing the previous one.",
-    status: "upcoming",
-    due_date: null,
-  };
-}
-
 export function buildPhaseState(milestones: any[] | undefined): PhaseState[] {
   return phases.map((phase) => {
     const phaseMilestones = milestones?.filter((milestone) => milestone.phase === phase.key).map(toMilestoneItem) || [];
@@ -152,8 +142,17 @@ export function loadInteractiveMilestones(milestones: any[] | undefined): PhaseS
     if (!Array.isArray(parsedState)) {
       return baseState;
     }
+    const storedStatusById = new Map(
+      parsedState.flatMap((phase) => phase.milestones.map((milestone) => [milestone.id, milestone.status] as const)),
+    );
 
-    return parsedState;
+    return baseState.map((phase) => ({
+      ...phase,
+      milestones: phase.milestones.map((milestone) => ({
+        ...milestone,
+        status: storedStatusById.get(milestone.id) || milestone.status,
+      })),
+    }));
   } catch {
     return baseState;
   }
@@ -169,5 +168,8 @@ export function saveInteractiveMilestones(phaseState: PhaseState[]) {
 }
 
 export function getInteractiveMilestoneCount(milestones: any[] | undefined) {
-  return loadInteractiveMilestones(milestones).reduce((total, phase) => total + phase.milestones.length, 0);
+  return loadInteractiveMilestones(milestones).reduce(
+    (total, phase) => total + phase.milestones.filter((milestone) => milestone.status === "completed").length,
+    0,
+  );
 }
