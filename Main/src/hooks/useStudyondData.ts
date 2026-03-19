@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import { mentorExamples, type MentorParams } from "../../mock-data/mentors";
 
 type Student = Database["public"]["Tables"]["students"]["Row"];
 type ThesisProject = Database["public"]["Tables"]["thesis_projects"]["Row"];
@@ -30,6 +31,16 @@ type ThesisSimilarityDebug = {
 
 export type PeerThesisSimilarityData = ThesisSimilarityResult & {
   __debug?: ThesisSimilarityDebug;
+};
+
+export type MentorMock = MentorParams;
+
+type MentorMatchResponse = {
+  matches?: Array<{
+    mentorId: string;
+    score: number;
+    reason: string;
+  }>;
 };
 
 function getPrimaryProject(projects: ThesisProject[], studentId: string) {
@@ -183,6 +194,13 @@ export function useFields() {
   });
 }
 
+export function useMockMentors() {
+  return useQuery({
+    queryKey: ["mock-mentors"],
+    queryFn: async () => mentorExamples,
+  });
+}
+
 export function usePeerThesisSimilarity(
   currentStudentId: string,
   students?: Student[],
@@ -317,6 +335,60 @@ export function usePeerThesisSimilarity(
       };
     },
     enabled: Boolean(currentStudent && currentProject && candidateProjects.length > 0),
+    staleTime: 1000 * 60 * 10,
+  });
+}
+
+export function useMentorMatches(
+  currentStudentId: string,
+  students?: Student[],
+  projects?: ThesisProject[],
+  mentors?: MentorMock[],
+) {
+  const currentStudent = students?.find((student) => student.id === currentStudentId);
+  const currentProject = projects ? getPrimaryProject(projects, currentStudentId) : null;
+
+  return useQuery({
+    queryKey: [
+      "mentor-match",
+      currentStudentId,
+      currentProject?.id || "no-project",
+      (mentors || []).map((mentor) => mentor.id).join(","),
+    ],
+    queryFn: async () => {
+      if (!currentStudent || !currentProject || !mentors?.length) {
+        return {};
+      }
+
+      const response = await fetch("/api/mentor-match", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          currentStudent,
+          currentProject: {
+            title: currentProject.title,
+            description: currentProject.description,
+            motivation: currentProject.motivation,
+          },
+          mentors,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Mentor matching failed with status ${response.status}`);
+      }
+
+      const data = (await response.json()) as MentorMatchResponse;
+      return Object.fromEntries(
+        (data.matches || []).map((match) => [
+          match.mentorId,
+          { score: match.score, reason: match.reason },
+        ]),
+      );
+    },
+    enabled: Boolean(currentStudent && currentProject && mentors?.length),
     staleTime: 1000 * 60 * 10,
   });
 }

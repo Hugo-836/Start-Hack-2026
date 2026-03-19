@@ -4,6 +4,8 @@ import path from "path";
 import { componentTagger } from "lovable-tagger";
 import { scorePeerThesisSimilarity } from "./server/peerThesisSimilarity";
 import { generatePeerIntroEmail } from "./server/peerIntroEmail";
+import { scoreMentorMatches } from "./server/mentorMatching";
+import { generateMentorIntroEmail } from "./server/mentorIntroEmail";
 
 function readBody(req: NodeJS.ReadableStream) {
   return new Promise<string>((resolve, reject) => {
@@ -65,6 +67,50 @@ export default defineConfig(({ mode }) => {
               const rawBody = await readBody(req);
               const body = JSON.parse(rawBody);
               const email = await generatePeerIntroEmail(body, {
+                ollamaModel: env.OLLAMA_MODEL || "qwen2.5:3b",
+              });
+
+              res.statusCode = 200;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify(email));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "Unknown error";
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: message }));
+            }
+          });
+          server.middlewares.use("/api/mentor-match", async (req: any, res: any, next: any) => {
+            if (req.method !== "POST") {
+              return next();
+            }
+
+            try {
+              const rawBody = await readBody(req);
+              const body = JSON.parse(rawBody);
+              const matches = await scoreMentorMatches(body, {
+                ollamaModel: env.OLLAMA_MODEL || "qwen2.5:3b",
+              });
+
+              res.statusCode = 200;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ matches }));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "Unknown error";
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: message }));
+            }
+          });
+          server.middlewares.use("/api/mentor-intro-email", async (req: any, res: any, next: any) => {
+            if (req.method !== "POST") {
+              return next();
+            }
+
+            try {
+              const rawBody = await readBody(req);
+              const body = JSON.parse(rawBody);
+              const email = await generateMentorIntroEmail(body, {
                 ollamaModel: env.OLLAMA_MODEL || "qwen2.5:3b",
               });
 

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import {
   useFields,
+  useMentorMatches,
+  useMockMentors,
   usePeerConnections,
   usePeerThesisSimilarity,
   useStudents,
@@ -18,7 +20,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Users, Sparkles, GraduationCap, Brain, Mail, Send } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Users, Sparkles, GraduationCap, Brain, Mail, Send, UserRoundSearch } from "lucide-react";
 import { buildPeerSuggestions } from "@/lib/peerMatching";
 
 const DEMO_STUDENT = "student-11";
@@ -52,10 +55,14 @@ export default function StudentPeers() {
   const [selectedPeerId, setSelectedPeerId] = useState<string | null>(null);
   const [emailDraft, setEmailDraft] = useState<{ subject: string; body: string } | null>(null);
   const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
+  const [selectedMentorId, setSelectedMentorId] = useState<string | null>(null);
+  const [mentorEmailDraft, setMentorEmailDraft] = useState<{ subject: string; body: string } | null>(null);
+  const [isGeneratingMentorEmail, setIsGeneratingMentorEmail] = useState(false);
   const { data: connections, isLoading } = usePeerConnections(DEMO_STUDENT);
   const { data: students } = useStudents();
   const { data: projects } = useThesisProjects();
   const { data: fields } = useFields();
+  const { data: mentors } = useMockMentors();
   const {
     data: thesisSimilarityByStudentId,
     isLoading: isThesisSimilarityLoading,
@@ -63,12 +70,26 @@ export default function StudentPeers() {
     error: thesisSimilarityError,
     status: thesisSimilarityStatus,
   } = usePeerThesisSimilarity(DEMO_STUDENT, students, projects);
+  const { data: mentorMatchesById, isLoading: isMentorMatchesLoading } = useMentorMatches(
+    DEMO_STUDENT,
+    students,
+    projects,
+    mentors,
+  );
 
   const getStudent = (id: string) => students?.find((s: any) => s.id === id);
   const getPeer = (conn: any) =>
     getStudent(conn.student_a_id === DEMO_STUDENT ? conn.student_b_id : conn.student_a_id);
   const currentStudent = getStudent(DEMO_STUDENT);
   const currentProject = projects ? getPrimaryProject(projects, DEMO_STUDENT) : null;
+  const mentorSuggestions = (mentors || [])
+    .map((mentor) => ({
+      mentor,
+      match: mentorMatchesById?.[mentor.id] || null,
+    }))
+    .filter((item) => item.match?.score)
+    .sort((a, b) => (b.match?.score || 0) - (a.match?.score || 0))
+    .slice(0, 3);
 
   const suggestions =
     students && projects
@@ -169,6 +190,58 @@ export default function StudentPeers() {
     setSelectedPeerId(null);
     setEmailDraft(null);
     setIsGeneratingEmail(false);
+  };
+  const selectedMentor = mentorSuggestions.find((item) => item.mentor.id === selectedMentorId) || null;
+
+  const openMentorEmailDialog = async (mentorId: string) => {
+    if (!currentStudent || !currentProject || !mentors) return;
+    const item = mentorSuggestions.find((entry) => entry.mentor.id === mentorId);
+    if (!item) return;
+
+    setSelectedMentorId(mentorId);
+    setMentorEmailDraft(null);
+    setIsGeneratingMentorEmail(true);
+
+    try {
+      const response = await fetch("/api/mentor-intro-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          currentStudent,
+          currentProject: {
+            title: currentProject.title,
+            description: currentProject.description,
+            motivation: currentProject.motivation,
+          },
+          mentor: item.mentor,
+          mentorMatchScore: item.match?.score ?? null,
+          mentorMatchReason: item.match?.reason ?? null,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Mentor email generation failed with status ${response.status}`);
+      }
+
+      const data = (await response.json()) as { subject: string; body: string };
+      setMentorEmailDraft(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      setMentorEmailDraft({
+        subject: "Mentorship request regarding my thesis",
+        body: `Hello ${item.mentor.full_name},\n\nI am currently working on my thesis and your expertise seems very relevant to my topic. I would be grateful for a short exchange if you are available.\n\nBest regards,\n${currentStudent.first_name} ${currentStudent.last_name}\n\nGeneration fallback: ${message}`,
+      });
+    } finally {
+      setIsGeneratingMentorEmail(false);
+    }
+  };
+
+  const closeMentorEmailDialog = () => {
+    setSelectedMentorId(null);
+    setMentorEmailDraft(null);
+    setIsGeneratingMentorEmail(false);
   };
 
   return (
@@ -375,21 +448,70 @@ export default function StudentPeers() {
               Find supervisors and experts related to your thesis.
             </p>
           </div>
+          {isPageLoading || isMentorMatchesLoading ? (
+            <p className="text-muted-foreground">Loading...</p>
+          ) : mentorSuggestions.length ? (
+            <div className="space-y-4">
+              {mentorSuggestions.map(({ mentor, match }) => (
+                <Card key={mentor.id} className="border shadow-none hover:shadow-md transition-shadow duration-300">
+                  <CardContent className="pt-6 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center ds-label">
+                        {mentor.full_name
+                          .split(" ")
+                          .slice(0, 2)
+                          .map((part) => part[0])
+                          .join("")}
+                      </div>
+                      <div>
+                        <p className="ds-label">{mentor.full_name}</p>
+                        <p className="ds-caption text-muted-foreground">
+                          {mentor.institution || "Independent mentor"}
+                        </p>
+                      </div>
+                    </div>
 
-          <Card className="border shadow-none">
-            <CardContent className="pt-6 text-center">
-              <GraduationCap className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-              <p className="ds-body text-muted-foreground">
-                Mentor section coming soon.
-              </p>
-              <div className="mt-4 p-4 rounded-lg border inline-block">
-                <p className="ds-small text-muted-foreground">
-                  This area will display supervisors and experts linked to the
-                  student’s thesis projects.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+                    <p className="ds-small text-muted-foreground">{match?.reason}</p>
+
+                    <div className="rounded-lg border border-ai/20 bg-ai/5 px-3 py-2">
+                      <div className="flex items-center gap-2 text-ai">
+                        <UserRoundSearch className="h-4 w-4" />
+                        <span className="ds-label">
+                          Mentor relevance {formatPercent(match?.score)}
+                        </span>
+                      </div>
+                      <p className="ds-small text-muted-foreground mt-1">{mentor.bio}</p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      {mentor.expertise.map((topic) => (
+                        <Badge key={topic} variant="secondary" className="ds-badge">
+                          {topic}
+                        </Badge>
+                      ))}
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => openMentorEmailDialog(mentor.id)}
+                    >
+                      <Mail className="h-4 w-4" />
+                      Generate mentor email
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Card className="border shadow-none">
+              <CardContent className="pt-6 text-center">
+                <GraduationCap className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+                <p className="ds-body text-muted-foreground">No mentor matches found yet.</p>
+              </CardContent>
+            </Card>
+          )}
         </section>
       </div>
 
@@ -408,16 +530,104 @@ export default function StudentPeers() {
             <p className="text-sm text-muted-foreground">Generating email...</p>
           ) : (
             <div className="space-y-3">
-              <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm">
-                <span className="font-medium">Subject:</span>{" "}
-                {emailDraft?.subject || "No subject generated."}
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Subject</p>
+                <Input
+                  value={emailDraft?.subject || ""}
+                  onChange={(event) =>
+                    setEmailDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            subject: event.target.value,
+                          }
+                        : current,
+                    )
+                  }
+                />
               </div>
-              <Textarea value={emailDraft?.body || ""} readOnly className="min-h-[260px]" />
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Body</p>
+                <Textarea
+                  value={emailDraft?.body || ""}
+                  onChange={(event) =>
+                    setEmailDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            body: event.target.value,
+                          }
+                        : current,
+                    )
+                  }
+                  className="min-h-[260px]"
+                />
+              </div>
             </div>
           )}
 
           <DialogFooter>
             <Button type="button" onClick={closeEmailDialog} disabled={isGeneratingEmail}>
+              <Send className="h-4 w-4" />
+              Send
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(selectedMentorId)} onOpenChange={(open) => !open && closeMentorEmailDialog()}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              AI email draft{selectedMentor ? ` for ${selectedMentor.mentor.full_name}` : ""}
+            </DialogTitle>
+            <DialogDescription>
+              This draft uses your thesis and the mentor expertise profile.
+            </DialogDescription>
+          </DialogHeader>
+
+          {isGeneratingMentorEmail ? (
+            <p className="text-sm text-muted-foreground">Generating email...</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Subject</p>
+                <Input
+                  value={mentorEmailDraft?.subject || ""}
+                  onChange={(event) =>
+                    setMentorEmailDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            subject: event.target.value,
+                          }
+                        : current,
+                    )
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Body</p>
+                <Textarea
+                  value={mentorEmailDraft?.body || ""}
+                  onChange={(event) =>
+                    setMentorEmailDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            body: event.target.value,
+                          }
+                        : current,
+                    )
+                  }
+                  className="min-h-[260px]"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button type="button" onClick={closeMentorEmailDialog} disabled={isGeneratingMentorEmail}>
               <Send className="h-4 w-4" />
               Send
             </Button>
