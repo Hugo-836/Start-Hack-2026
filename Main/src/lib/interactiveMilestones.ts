@@ -1,8 +1,22 @@
-export const DEMO_STUDENT = "student-11";
+import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
+
+export const DEMO_STUDENT = "student-07";
 export const INTERACTIVE_MILESTONES_STORAGE_KEY = `studyond-interactive-milestones-${DEMO_STUDENT}`;
 export const INTERACTIVE_MILESTONES_EVENT = "studyond:interactive-milestones-updated";
 export const INTERACTIVE_WORKSPACE_STORAGE_KEY = `studyond-interactive-workspace-${DEMO_STUDENT}`;
 export const INTERACTIVE_WORKSPACE_EVENT = "studyond:interactive-workspace-updated";
+const INTERACTIVE_REMOTE_CACHE_KEY = "studyond-interactive-remote-cache";
+
+type StudentRow = Database["public"]["Tables"]["students"]["Row"];
+type FieldRow = Database["public"]["Tables"]["fields"]["Row"];
+type SupervisorRow = Database["public"]["Tables"]["supervisors"]["Row"];
+type ExpertRow = Database["public"]["Tables"]["experts"]["Row"];
+type ThesisProjectRow = Database["public"]["Tables"]["thesis_projects"]["Row"];
+type FeedbackLoopRow = Database["public"]["Tables"]["feedback_loops"]["Row"];
+type PeerConnectionRow = Database["public"]["Tables"]["peer_connections"]["Row"];
+type ProgressMilestoneRow = Database["public"]["Tables"]["progress_milestones"]["Row"];
+type UniversityRow = Database["public"]["Tables"]["universities"]["Row"];
 
 export type MilestoneStatus = "upcoming" | "in_progress" | "completed" | "overdue";
 
@@ -65,203 +79,209 @@ type WorkspaceState = {
   projectDocuments: ProjectDocument[];
 };
 
-const baseStudents = [
-  {
-    id: "student-11",
-    first_name: "Jules",
-    last_name: "Mangin",
-    degree: "master",
-    university_id: "epfl",
-    skills: ["UX Research", "Prototyping", "Data Analysis"],
-    objectives: ["Write a strong thesis", "Find an applied research topic"],
-    field_ids: ["field-hci", "field-ai-ethics"],
-    about: "Curious student interested in product design, human-centered AI, and useful research outputs.",
-  },
-  {
-    id: "student-12",
-    first_name: "Nora",
-    last_name: "Favre",
-    degree: "master",
-    university_id: "epfl",
-    skills: ["Qualitative Research", "Interview Analysis", "Writing"],
-    objectives: ["Improve research methods", "Collaborate with peers"],
-    field_ids: ["field-hci", "field-writing"],
-    about: "Works on participatory design and academic writing.",
-  },
-  {
-    id: "student-13",
-    first_name: "Adam",
-    last_name: "Roux",
-    degree: "master",
-    university_id: "unil",
-    skills: ["Machine Learning", "Statistics", "Data Visualization"],
-    objectives: ["Structure experiments", "Explore AI applications"],
-    field_ids: ["field-ml", "field-dataviz"],
-    about: "Interested in applied ML and clear communication of results.",
-  },
-] as const;
+type RemoteCache = {
+  students: StudentRow[];
+  fields: FieldRow[];
+  supervisors: SupervisorRow[];
+  experts: ExpertRow[];
+  projects: ThesisProjectRow[];
+  feedbacks: FeedbackLoopRow[];
+  peerConnections: PeerConnectionRow[];
+  progressMilestones: ProgressMilestoneRow[];
+  universities: UniversityRow[];
+};
 
-const baseFields = [
-  { id: "field-hci", name: "Human-Computer Interaction" },
-  { id: "field-ai-ethics", name: "AI Ethics" },
-  { id: "field-writing", name: "Academic Writing" },
-  { id: "field-ml", name: "Machine Learning" },
-  { id: "field-dataviz", name: "Data Visualization" },
-] as const;
 
-const baseSupervisors = [
-  {
-    id: "supervisor-01",
-    first_name: "Elena",
-    last_name: "Rossi",
-    title: "Prof.",
-    email: "elena.rossi@epfl.ch",
-  },
-  {
-    id: "supervisor-02",
-    first_name: "Marc",
-    last_name: "Dubois",
-    title: "Dr.",
-    email: "marc.dubois@unil.ch",
-  },
-] as const;
+const emptyRemoteCache: RemoteCache = {
+  students: [],
+  fields: [],
+  supervisors: [],
+  experts: [],
+  projects: [],
+  feedbacks: [],
+  peerConnections: [],
+  progressMilestones: [],
+  universities: [],
+};
 
-const baseExperts = [
-  {
-    id: "expert-01",
-    first_name: "Sofia",
-    last_name: "Meyer",
-    title: "Academic Writing Coach",
-    email: "sofia.meyer@idiap.ch",
-  },
-  {
-    id: "expert-02",
-    first_name: "Luca",
-    last_name: "Bernard",
-    title: "Research Methods Specialist",
-    email: "luca.bernard@epfl.ch",
-  },
-] as const;
+let remoteCache: RemoteCache | null = null;
+let remoteLoadPromise: Promise<void> | null = null;
 
-const baseProjects = [
-  {
-    id: "project-11",
-    student_id: "student-11",
-    title: "Designing AI Progress Tools for Thesis Students",
-    description:
-      "Explore how guided progress tracking, contextual suggestions, and mentor feedback can support thesis momentum.",
-    motivation:
-      "I want to build a student-facing interface that makes the thesis process less opaque and more actionable.",
-    state: "in_progress",
-    supervisor_ids: ["supervisor-01"],
-    expert_ids: ["expert-01", "expert-02"],
-    created_at: "2026-02-15T09:00:00.000Z",
-    updated_at: "2026-03-18T16:30:00.000Z",
-  },
-  {
-    id: "project-12",
-    student_id: "student-12",
-    title: "Improving Thesis Writing Support Through Peer Review",
-    description:
-      "Study how structured peer review can improve writing confidence and research clarity in student theses.",
-    motivation: "I want to create better support loops for writing-intensive thesis work.",
-    state: "agreed",
-    supervisor_ids: ["supervisor-01"],
-    expert_ids: ["expert-01"],
-    created_at: "2026-02-12T10:00:00.000Z",
-    updated_at: "2026-03-12T11:00:00.000Z",
-  },
-  {
-    id: "project-13",
-    student_id: "student-13",
-    title: "Visual Analytics for Student Research Dashboards",
-    description:
-      "Investigate visual ways to help students interpret research progress and experimental evidence.",
-    motivation: "I enjoy turning complex data into interfaces that are easy to reason about.",
-    state: "in_progress",
-    supervisor_ids: ["supervisor-02"],
-    expert_ids: ["expert-02"],
-    created_at: "2026-02-20T13:00:00.000Z",
-    updated_at: "2026-03-16T14:00:00.000Z",
-  },
-] as const;
+function getDefaultRemoteCache(): RemoteCache {
+  return {
+    students: [],
+    fields: [],
+    supervisors: [],
+    experts: [],
+    projects: [],
+    feedbacks: [],
+    peerConnections: [],
+    progressMilestones: [],
+    universities: [],
+  };
+}
 
-const baseFeedbacks: WorkspaceFeedback[] = [
-  {
-    id: "feedback-01",
-    student_id: "student-11",
-    title: "Initial topic framing",
-    submission_text: "I drafted the first framing for the thesis scope and research opportunity.",
-    file_name: "topic-framing.pdf",
-    reviewer_feedback:
-      "The framing is promising. Narrow the target user group and make the research question more explicit.",
-    ai_summary:
-      "Clarify the user segment, tighten the research question, and connect the scope more directly to your evaluation plan.",
-    status: "reviewed",
-    reviewer_id: "supervisor-01",
-    reviewer_type: "supervisor",
-  },
-  {
-    id: "feedback-02",
-    student_id: "student-11",
-    title: "Interview guide draft",
-    submission_text: "I prepared a first version of the interview questions for students and mentors.",
-    file_name: "interview-guide.docx",
-    reviewer_feedback: null,
-    ai_summary: null,
-    status: "submitted",
-    reviewer_id: "expert-02",
-    reviewer_type: "expert",
-  },
-];
+function readRemoteCacheFromStorage() {
+  if (typeof window === "undefined") {
+    return null;
+  }
 
-const basePeerConnections = [
-  {
-    id: "peer-connection-01",
-    student_a_id: "student-11",
-    student_b_id: "student-12",
-    status: "accepted",
-  },
-] as const;
+  const rawCache = window.localStorage.getItem(INTERACTIVE_REMOTE_CACHE_KEY);
+  if (!rawCache) {
+    return null;
+  }
 
-const baseMockMentors = [
-  {
-    id: "mentor-01",
-    user_id: "user-mentor-01",
-    full_name: "Dr. Elena Rossi",
-    email: "elena.rossi@epfl.ch",
-    institution: "EPFL",
-    expertise: ["Human-Computer Interaction", "AI Ethics", "Qualitative Research"],
-    bio: "Research mentor focused on user-centered AI systems and thesis framing.",
-    max_students: 6,
-    created_at: "2026-03-01T09:00:00.000Z",
-    updated_at: "2026-03-01T09:00:00.000Z",
-  },
-  {
-    id: "mentor-02",
-    user_id: "user-mentor-02",
-    full_name: "Marc Dubois",
-    email: "marc.dubois@unil.ch",
-    institution: "UNIL",
-    expertise: ["Machine Learning", "Data Visualization", "Statistics"],
-    bio: "Supports students who need help structuring experiments and communicating results.",
-    max_students: 4,
-    created_at: "2026-03-02T10:30:00.000Z",
-    updated_at: "2026-03-02T10:30:00.000Z",
-  },
-  {
-    id: "mentor-03",
-    user_id: "user-mentor-03",
-    full_name: "Sofia Meyer",
-    email: "sofia.meyer@idiap.ch",
-    institution: "Idiap Research Institute",
-    expertise: ["Natural Language Processing", "Academic Writing", "Literature Review"],
-    bio: "Helps students turn scattered ideas into a clear research question and writing plan.",
-    max_students: 5,
-    created_at: "2026-03-03T14:15:00.000Z",
-    updated_at: "2026-03-03T14:15:00.000Z",
-  },
-] as const;
+  try {
+    const parsedCache = JSON.parse(rawCache) as Partial<RemoteCache>;
+    return {
+      ...emptyRemoteCache,
+      ...parsedCache,
+      students: Array.isArray(parsedCache?.students) ? parsedCache.students : [],
+      fields: Array.isArray(parsedCache?.fields) ? parsedCache.fields : [],
+      supervisors: Array.isArray(parsedCache?.supervisors) ? parsedCache.supervisors : [],
+      experts: Array.isArray(parsedCache?.experts) ? parsedCache.experts : [],
+      projects: Array.isArray(parsedCache?.projects) ? parsedCache.projects : [],
+      feedbacks: Array.isArray(parsedCache?.feedbacks) ? parsedCache.feedbacks : [],
+      peerConnections: Array.isArray(parsedCache?.peerConnections) ? parsedCache.peerConnections : [],
+      progressMilestones: Array.isArray(parsedCache?.progressMilestones) ? parsedCache.progressMilestones : [],
+      universities: Array.isArray(parsedCache?.universities) ? parsedCache.universities : [],
+    } satisfies RemoteCache;
+  } catch {
+    return null;
+  }
+}
+
+function writeRemoteCacheToStorage(cache: RemoteCache) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(INTERACTIVE_REMOTE_CACHE_KEY, JSON.stringify(cache));
+}
+
+function getRemoteCache() {
+  if (remoteCache) {
+    return remoteCache;
+  }
+
+  remoteCache = readRemoteCacheFromStorage() || getDefaultRemoteCache();
+  return remoteCache;
+}
+
+function getPreferredStudentId(studentId = DEMO_STUDENT) {
+  const students = getRemoteCache().students;
+  if (students.some((student) => student.id === studentId)) {
+    return studentId;
+  }
+
+  return students[0]?.id || studentId;
+}
+
+async function loadRemoteCacheFromSupabase() {
+  const [
+    studentsResult,
+    fieldsResult,
+    supervisorsResult,
+    expertsResult,
+    projectsResult,
+    feedbacksResult,
+    peerConnectionsResult,
+    progressMilestonesResult,
+    universitiesResult,
+  ] = await Promise.all([
+    supabase.from("students").select("*"),
+    supabase.from("fields").select("*"),
+    supabase.from("supervisors").select("*"),
+    supabase.from("experts").select("*"),
+    supabase.from("thesis_projects").select("*"),
+    supabase.from("feedback_loops").select("*"),
+    supabase.from("peer_connections").select("*"),
+    supabase.from("progress_milestones").select("*").order("due_date", { ascending: true }),
+    supabase.from("universities").select("*"),
+  ]);
+
+  const error =
+    studentsResult.error ||
+    fieldsResult.error ||
+    supervisorsResult.error ||
+    expertsResult.error ||
+    projectsResult.error ||
+    feedbacksResult.error ||
+    peerConnectionsResult.error ||
+    progressMilestonesResult.error ||
+    universitiesResult.error;
+
+  if (error) {
+    throw error;
+  }
+
+  const nextCache: RemoteCache = {
+    students: studentsResult.data || [],
+    fields: fieldsResult.data || [],
+    supervisors: supervisorsResult.data || [],
+    experts: expertsResult.data || [],
+    projects: projectsResult.data || [],
+    feedbacks: feedbacksResult.data || [],
+    peerConnections: peerConnectionsResult.data || [],
+    progressMilestones: progressMilestonesResult.data || [],
+    universities: universitiesResult.data || [],
+  };
+
+  remoteCache = nextCache;
+  writeRemoteCacheToStorage(nextCache);
+}
+
+function dispatchInteractiveRefresh() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent(INTERACTIVE_MILESTONES_EVENT));
+  window.dispatchEvent(new CustomEvent(INTERACTIVE_WORKSPACE_EVENT));
+}
+
+function ensureRemoteDataLoaded() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  getRemoteCache();
+
+  if (remoteLoadPromise) {
+    return;
+  }
+
+  remoteLoadPromise = loadRemoteCacheFromSupabase()
+    .then(() => {
+      dispatchInteractiveRefresh();
+    })
+    .catch(() => {
+      // Keep the UI usable with cached or fallback data if the remote load fails.
+    })
+    .finally(() => {
+      remoteLoadPromise = null;
+    });
+}
+
+function toWorkspaceFeedback(feedback: FeedbackLoopRow): WorkspaceFeedback {
+  const fileName = feedback.submission_file_url
+    ? feedback.submission_file_url.split("/").pop() || feedback.submission_file_url
+    : null;
+
+  return {
+    id: feedback.id,
+    student_id: feedback.student_id,
+    title: feedback.title,
+    submission_text: feedback.submission_text,
+    file_name: fileName,
+    reviewer_feedback: feedback.reviewer_feedback,
+    ai_summary: feedback.ai_summary,
+    status: feedback.status,
+    reviewer_id: feedback.reviewer_id,
+    reviewer_type:
+      feedback.reviewer_type === "expert" ? "expert" : "supervisor",
+  };
+}
 
 export const phases: PhaseDefinition[] = [
   {
@@ -447,7 +467,12 @@ export function saveInteractiveMilestones(phaseState: PhaseState[]) {
 }
 
 export function getInteractivePhaseState() {
-  return loadInteractiveMilestones(undefined);
+  ensureRemoteDataLoaded();
+  const studentId = getPreferredStudentId();
+  const milestones = getRemoteCache().progressMilestones.filter(
+    (milestone) => milestone.student_id === studentId,
+  );
+  return loadInteractiveMilestones(milestones);
 }
 
 export function updateInteractiveMilestoneStatus(
@@ -563,7 +588,16 @@ export function removeInteractiveMilestoneAttachment(
 }
 
 export function getInteractiveMilestoneCount(milestones: any[] | undefined) {
-  return loadInteractiveMilestones(milestones).reduce(
+  ensureRemoteDataLoaded();
+  const preferredStudentId = getPreferredStudentId();
+  const sourceMilestones =
+    milestones && milestones.length > 0
+      ? milestones
+      : getRemoteCache().progressMilestones.filter(
+          (milestone) => milestone.student_id === preferredStudentId,
+        );
+
+  return loadInteractiveMilestones(sourceMilestones).reduce(
     (total, phase) => total + phase.milestones.filter((milestone) => milestone.status === "completed").length,
     0,
   );
@@ -600,30 +634,45 @@ function saveInteractiveWorkspaceState(state: WorkspaceState) {
 }
 
 export function getInteractiveStudents() {
-  return [...baseStudents];
+  ensureRemoteDataLoaded();
+  return [...getRemoteCache().students];
 }
 
 export function getInteractiveFields() {
-  return [...baseFields];
+  ensureRemoteDataLoaded();
+  return [...getRemoteCache().fields];
 }
 
 export function getInteractiveSupervisors() {
-  return [...baseSupervisors];
+  ensureRemoteDataLoaded();
+  return [...getRemoteCache().supervisors];
 }
 
 export function getInteractiveExperts() {
-  return [...baseExperts];
+  ensureRemoteDataLoaded();
+  return [...getRemoteCache().experts];
 }
 
 export function getInteractiveThesisProjects(studentId?: string) {
-  const projects = [...baseProjects];
-  return studentId ? projects.filter((project) => project.student_id === studentId) : projects;
+  ensureRemoteDataLoaded();
+  const preferredStudentId = studentId ? getPreferredStudentId(studentId) : undefined;
+  const projects = [...getRemoteCache().projects];
+  return preferredStudentId
+    ? projects.filter((project) => project.student_id === preferredStudentId)
+    : projects;
 }
 
 export function getInteractiveFeedbacks(studentId?: string) {
+  ensureRemoteDataLoaded();
   const workspaceState = loadInteractiveWorkspaceState();
-  const feedbacks = [...baseFeedbacks, ...workspaceState.customFeedbacks];
-  return studentId ? feedbacks.filter((feedback) => feedback.student_id === studentId) : feedbacks;
+  const preferredStudentId = studentId ? getPreferredStudentId(studentId) : undefined;
+  const feedbacks = [
+    ...getRemoteCache().feedbacks.map(toWorkspaceFeedback),
+    ...workspaceState.customFeedbacks,
+  ];
+  return preferredStudentId
+    ? feedbacks.filter((feedback) => feedback.student_id === preferredStudentId)
+    : feedbacks;
 }
 
 export function addInteractiveFeedbackSubmission(feedback: WorkspaceFeedback) {
@@ -632,28 +681,59 @@ export function addInteractiveFeedbackSubmission(feedback: WorkspaceFeedback) {
     ...workspaceState,
     customFeedbacks: [feedback, ...workspaceState.customFeedbacks],
   });
+
+  const activeProject = getInteractivePrimaryProject(feedback.student_id);
+  const reviewerId = feedback.reviewer_id || activeProject?.supervisor_ids?.[0] || null;
+  if (!activeProject || !reviewerId) {
+    return;
+  }
+
+  void supabase.from("feedback_loops").insert({
+    project_id: activeProject.id,
+    student_id: feedback.student_id,
+    title: feedback.title,
+    submission_text: feedback.submission_text,
+    submission_file_url: feedback.file_name,
+    reviewer_feedback: feedback.reviewer_feedback,
+    ai_summary: feedback.ai_summary,
+    reviewer_id: reviewerId,
+    reviewer_type: feedback.reviewer_type,
+    status: (feedback.status || "submitted") as Database["public"]["Enums"]["feedback_status"],
+    submitted_at: new Date().toISOString(),
+  }).then(({ error }) => {
+    if (error) {
+      return;
+    }
+
+    remoteLoadPromise = null;
+    ensureRemoteDataLoaded();
+  });
 }
 
 export function getInteractivePeerConnections(studentId?: string) {
-  const connections = [...basePeerConnections];
-  return studentId
+  ensureRemoteDataLoaded();
+  const preferredStudentId = studentId ? getPreferredStudentId(studentId) : undefined;
+  const connections = [...getRemoteCache().peerConnections];
+  return preferredStudentId
     ? connections.filter(
         (connection) =>
-          connection.student_a_id === studentId || connection.student_b_id === studentId,
+          connection.student_a_id === preferredStudentId ||
+          connection.student_b_id === preferredStudentId,
       )
     : connections;
 }
 
 export function getInteractiveMockMentors() {
-  return [...baseMockMentors];
+  return [];
 }
 
 export function getInteractiveStudent(studentId = DEMO_STUDENT) {
-  return getInteractiveStudents().find((student) => student.id === studentId) || null;
+  const preferredStudentId = getPreferredStudentId(studentId);
+  return getInteractiveStudents().find((student) => student.id === preferredStudentId) || null;
 }
 
 export function getInteractivePrimaryProject(studentId = DEMO_STUDENT) {
-  const projects = getInteractiveThesisProjects(studentId);
+  const projects = getInteractiveThesisProjects(getPreferredStudentId(studentId));
   return (
     projects.find((project) => project.state === "in_progress" || project.state === "agreed") ||
     projects[0] ||
@@ -662,6 +742,8 @@ export function getInteractivePrimaryProject(studentId = DEMO_STUDENT) {
 }
 
 export function getInteractiveStudentWorkspace(studentId = DEMO_STUDENT) {
+  ensureRemoteDataLoaded();
+  const preferredStudentId = getPreferredStudentId(studentId);
   const students = getInteractiveStudents();
   const projects = getInteractiveThesisProjects();
   const supervisors = getInteractiveSupervisors();
@@ -670,29 +752,31 @@ export function getInteractiveStudentWorkspace(studentId = DEMO_STUDENT) {
   const peerConnections = getInteractivePeerConnections();
   const fields = getInteractiveFields();
   const mockMentors = getInteractiveMockMentors();
+  const universities = [...getRemoteCache().universities];
 
   const workspaceState = loadInteractiveWorkspaceState();
 
   return {
     students,
-    student: students.find((item) => item.id === studentId) || null,
+    student: students.find((item) => item.id === preferredStudentId) || null,
     projects,
-    studentProjects: projects.filter((item) => item.student_id === studentId),
+    studentProjects: projects.filter((item) => item.student_id === preferredStudentId),
     activeProject:
       projects.find(
         (item) =>
-          item.student_id === studentId &&
+          item.student_id === preferredStudentId &&
           (item.state === "in_progress" || item.state === "agreed"),
-      ) || projects.find((item) => item.student_id === studentId) || null,
+      ) || projects.find((item) => item.student_id === preferredStudentId) || null,
     supervisors,
     experts,
+    universities,
     feedbacks,
-    studentFeedbacks: feedbacks.filter((item) => item.student_id === studentId),
+    studentFeedbacks: feedbacks.filter((item) => item.student_id === preferredStudentId),
     projectDocuments: workspaceState.projectDocuments.filter((item) =>
-      projects.some((project) => project.student_id === studentId && project.id === item.project_id),
+      projects.some((project) => project.student_id === preferredStudentId && project.id === item.project_id),
     ),
     peerConnections: peerConnections.filter(
-      (item) => item.student_a_id === studentId || item.student_b_id === studentId,
+      (item) => item.student_a_id === preferredStudentId || item.student_b_id === preferredStudentId,
     ),
     fields,
     mockMentors,

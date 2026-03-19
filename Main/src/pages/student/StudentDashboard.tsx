@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, BookOpen, Sparkles } from "lucide-react";
+import { ArrowRight, BookOpen, Sparkles, Building2, Briefcase } from "lucide-react";
 import {
   DEMO_STUDENT,
   getInteractivePhaseState,
@@ -49,7 +49,13 @@ export default function StudentDashboard() {
     getInteractiveStudentWorkspace(DEMO_STUDENT),
   );
 
-  const { student, studentProjects, supervisors } = workspace;
+  const {
+    student,
+    studentProjects,
+    supervisors,
+    experts = [],
+    universities = [],
+  } = workspace;
 
   const activeProject =
     studentProjects.find(
@@ -59,6 +65,17 @@ export default function StudentDashboard() {
   const assignedSupervisor = supervisors?.find((s: any) =>
     activeProject?.supervisor_ids?.includes(s.id),
   );
+
+  const assignedUniversity = universities?.find(
+    (u: any) =>
+      u.id === assignedSupervisor?.university_id ||
+      u.id === student?.university_id,
+  );
+
+  const assignedExperts =
+    activeProject?.expert_ids
+      ?.map((id: string) => experts?.find((e: any) => e.id === id))
+      .filter(Boolean) || [];
 
   useEffect(() => {
     setPhaseState(getInteractivePhaseState());
@@ -80,7 +97,10 @@ export default function StudentDashboard() {
         INTERACTIVE_MILESTONES_EVENT,
         syncDashboardProgress,
       );
-      window.removeEventListener(INTERACTIVE_WORKSPACE_EVENT, syncDashboardProgress);
+      window.removeEventListener(
+        INTERACTIVE_WORKSPACE_EVENT,
+        syncDashboardProgress,
+      );
       window.removeEventListener("focus", syncDashboardProgress);
     };
   }, []);
@@ -103,18 +123,6 @@ export default function StudentDashboard() {
     totalMilestones > 0
       ? Math.round((completedMilestones / totalMilestones) * 100)
       : 0;
-
-  const completedPhaseKeys = new Set(
-    phaseState
-      .filter(
-        (phase) =>
-          phase.milestones.length > 0 &&
-          phase.milestones.every(
-            (milestone: any) => milestone.status === "completed",
-          ),
-      )
-      .map((phase) => phase.key),
-  );
 
   const currentPhaseKey =
     phaseState.find((phase) =>
@@ -162,58 +170,58 @@ export default function StudentDashboard() {
       <Link to="/student/milestones" className="block">
         <Card className="border shadow-none hover:shadow-md transition-shadow duration-300 cursor-pointer">
           <CardContent className="pt-8 space-y-6">
-          <div className="flex items-center justify-between gap-4">
-            <h2 className="ds-title-sm">Overall Progress</h2>
-            <p className="ds-title-cards">{completionPercentage}%</p>
-          </div>
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="ds-title-sm">Overall Progress</h2>
+              <p className="ds-title-cards">{completionPercentage}%</p>
+            </div>
 
-          <div className="h-3 w-full rounded-full bg-secondary overflow-hidden">
-            <div
-              className="h-full bg-foreground transition-all duration-300"
-              style={{ width: `${completionPercentage}%` }}
-            />
-          </div>
+            <div className="h-3 w-full rounded-full bg-secondary overflow-hidden">
+              <div
+                className="h-full bg-foreground transition-all duration-300"
+                style={{ width: `${completionPercentage}%` }}
+              />
+            </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            {phases.map((phase) => {
-              const phaseData = phaseState.find((item) => item.key === phase.key);
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              {phases.map((phase) => {
+                const phaseData = phaseState.find((item) => item.key === phase.key);
 
-              const isCompleted =
-                phaseData?.milestones?.length > 0 &&
-                phaseData.milestones.every(
-                  (milestone: any) => milestone.status === "completed",
+                const isCompleted =
+                  phaseData?.milestones?.length > 0 &&
+                  phaseData.milestones.every(
+                    (milestone: any) => milestone.status === "completed",
+                  );
+
+                const hasStarted = phaseData?.milestones?.some(
+                  (milestone: any) =>
+                    milestone.status === "in_progress" ||
+                    milestone.status === "completed",
                 );
 
-              const hasStarted = phaseData?.milestones?.some(
-                (milestone: any) =>
-                  milestone.status === "in_progress" ||
-                  milestone.status === "completed",
-              );
+                const isCurrent = currentPhaseKey === phase.key;
 
-              const isCurrent = currentPhaseKey === phase.key;
-
-              return (
-                <div key={phase.key} className="space-y-3">
-                  <div
-                    className={`h-2 w-full rounded-full transition-colors ${
-                      isCompleted || isCurrent || hasStarted
-                        ? "bg-foreground"
-                        : "bg-secondary"
-                    }`}
-                  />
-                  <p
-                    className={`ds-body ${
-                      isCompleted || isCurrent || hasStarted
-                        ? "text-foreground"
-                        : "text-muted-foreground"
-                    }`}
-                  >
-                    {phase.label}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
+                return (
+                  <div key={phase.key} className="space-y-3">
+                    <div
+                      className={`h-2 w-full rounded-full transition-colors ${
+                        isCompleted || isCurrent || hasStarted
+                          ? "bg-foreground"
+                          : "bg-secondary"
+                      }`}
+                    />
+                    <p
+                      className={`ds-body ${
+                        isCompleted || isCurrent || hasStarted
+                          ? "text-foreground"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {phase.label}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
           </CardContent>
         </Card>
       </Link>
@@ -253,7 +261,11 @@ export default function StudentDashboard() {
         </Card>
       </Link>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div
+        className={`grid grid-cols-1 ${
+          assignedExperts.length > 0 ? "md:grid-cols-3" : "md:grid-cols-2"
+        } gap-4`}
+      >
         <Card className="border shadow-none h-full">
           <CardContent className="pt-6">
             <h3 className="ds-title-sm">Next Steps</h3>
@@ -297,59 +309,117 @@ export default function StudentDashboard() {
             <h3 className="ds-title-sm">Your Supervisor</h3>
 
             {assignedSupervisor ? (
-              <div className="mt-6 flex items-start gap-3">
-                <div className="h-10 w-10 rounded-full bg-secondary flex items-center justify-center ds-label shrink-0">
-                  {assignedSupervisor.first_name?.[0]}
-                  {assignedSupervisor.last_name?.[0]}
+              <div className="mt-6 space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 rounded-full bg-secondary flex items-center justify-center ds-label shrink-0">
+                    {assignedSupervisor.first_name?.[0]}
+                    {assignedSupervisor.last_name?.[0]}
+                  </div>
+
+                  <div>
+                    <p className="ds-label text-muted-foreground mb-1">Assigned Supervisor</p>
+                    <p className="ds-title-cards">
+                      {assignedSupervisor.title ? `${assignedSupervisor.title} ` : ""}
+                      {assignedSupervisor.first_name} {assignedSupervisor.last_name}
+                    </p>
+                    <p className="ds-small text-muted-foreground mt-1">
+                      {assignedSupervisor.email || "No email available"}
+                    </p>
+                  </div>
                 </div>
 
-                <div>
-                  <p className="ds-title-cards">
-                    {assignedSupervisor.title ? `${assignedSupervisor.title} ` : ""}
-                    {assignedSupervisor.first_name} {assignedSupervisor.last_name}
-                  </p>
-                  <p className="ds-small text-muted-foreground mt-1">
-                    {assignedSupervisor.email || "No email available"}
-                  </p>
+                <div className="flex items-start gap-2">
+                  <Building2 className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                  <div>
+                    <p className="ds-label text-muted-foreground mb-1">University</p>
+                    <p className="ds-small">
+                      {assignedUniversity?.name || "No university available"}
+                    </p>
+                  </div>
                 </div>
               </div>
             ) : (
-              <p className="ds-body text-muted-foreground mt-6">
-                No supervisor assigned yet.
-              </p>
+              <div className="mt-6 space-y-4">
+                <div>
+                  <p className="ds-label text-muted-foreground mb-1">Assigned Supervisor</p>
+                  <p className="ds-title-cards">You do not have a supervisor for now</p>
+                </div>
+
+                <div className="flex items-start gap-2">
+                  <Building2 className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                  <div>
+                    <p className="ds-label text-muted-foreground mb-1">University</p>
+                    <p className="ds-small text-muted-foreground">
+                      {assignedUniversity?.name || "No university available"}
+                    </p>
+                  </div>
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>
+
+        {assignedExperts.length > 0 && (
+          <Card className="border shadow-none h-full">
+            <CardContent className="pt-6">
+              <h3 className="ds-title-sm">Experts</h3>
+
+              <div className="mt-6 space-y-4">
+                {assignedExperts.map((expert: any) => (
+                  <div key={expert.id} className="flex items-start gap-3">
+                    <div className="h-10 w-10 rounded-full bg-secondary flex items-center justify-center ds-label shrink-0">
+                      {expert.first_name?.[0]}
+                      {expert.last_name?.[0]}
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="ds-title-cards">
+                          {expert.title ? `${expert.title} ` : ""}
+                          {expert.first_name} {expert.last_name}
+                        </p>
+                        <Badge className="bg-emerald-100 text-emerald-800 border-0">
+                          <span className="flex items-center gap-1">
+                            <Briefcase className="h-3.5 w-3.5" />
+                            Expert
+                          </span>
+                        </Badge>
+                      </div>
+
+                      <p className="ds-small text-muted-foreground mt-1">
+                        {expert.email || "No email available"}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
-      <Card className="border shadow-none h-full">
-  <CardContent className="pt-6">
-    <h3 className="ds-title-sm">Your Supervisor</h3>
+      <Card className="border border-ai shadow-none">
+        <CardContent className="pt-6">
+          <div className="flex items-start gap-4">
+            <div className="rounded-full bg-ai p-2 shrink-0">
+              <Sparkles className="h-4 w-4 text-white" />
+            </div>
 
-    {assignedSupervisor ? (
-      <div className="mt-6 flex items-start gap-3">
-        <div className="h-10 w-10 rounded-full bg-secondary flex items-center justify-center ds-label shrink-0">
-          {assignedSupervisor.first_name?.[0]}
-          {assignedSupervisor.last_name?.[0]}
-        </div>
+            <div>
+              <p className="ds-label text-ai">AI Suggestion</p>
+              <p className="ds-body text-muted-foreground mt-2">{aiSuggestionText}</p>
 
-        <div>
-          <p className="ds-title-cards">
-            {assignedSupervisor.title ? `${assignedSupervisor.title} ` : ""}
-            {assignedSupervisor.first_name} {assignedSupervisor.last_name}
-          </p>
-          <p className="ds-small text-muted-foreground mt-1">
-            {assignedSupervisor.email || "No email available"}
-          </p>
-        </div>
-      </div>
-    ) : (
-      <div className="mt-6">
-        <p className="ds-title-cards">You do not have a supervisor for now</p>
-      </div>
-    )}
-  </CardContent>
-</Card>
+              <Link
+                to="/student/milestones"
+                className="inline-flex items-center gap-1 mt-5 ds-label text-foreground hover:underline"
+              >
+                {totalMilestones === 0 ? "Create milestones" : "Open milestones"}
+                <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Link to="/student/feedback">
