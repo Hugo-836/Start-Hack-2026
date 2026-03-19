@@ -23,12 +23,27 @@ const statusConfig: Record<MilestoneStatus, { icon: typeof Circle; color: string
 export default function StudentMilestones() {
   const { data: milestones, isLoading } = useProgressMilestones(DEMO_STUDENT);
   const [phaseState, setPhaseState] = useState<PhaseState[]>(() => loadInteractiveMilestones(undefined));
+  const [selectedPhaseKey, setSelectedPhaseKey] = useState<string>(phases[0]?.key ?? "");
+  const completedPhases = new Set(
+    phaseState
+      .filter((phase) => phase.milestones.length > 0 && phase.milestones.every((milestone) => milestone.status === "completed"))
+      .map((phase) => phase.key),
+  );
 
   useEffect(() => {
     if (!isLoading) {
       setPhaseState(loadInteractiveMilestones(milestones));
     }
   }, [isLoading, milestones]);
+
+  useEffect(() => {
+    if (phaseState.length === 0) return;
+
+    const selectedPhaseExists = phaseState.some((phase) => phase.key === selectedPhaseKey);
+    if (!selectedPhaseExists) {
+      setSelectedPhaseKey(phaseState[0].key);
+    }
+  }, [phaseState, selectedPhaseKey]);
 
   const toggleMilestone = (phaseKey: string, milestoneId: string, checked: boolean) => {
     setPhaseState((current) => {
@@ -63,10 +78,23 @@ export default function StudentMilestones() {
       <div className="flex gap-2 overflow-x-auto pb-2">
         {phases.map((phase, i) => (
           <div key={phase.key} className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary whitespace-nowrap">
-              <span className="ds-badge text-muted-foreground">{i + 1}</span>
+            <button
+              type="button"
+              onClick={() => setSelectedPhaseKey(phase.key)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full whitespace-nowrap transition-colors border ${
+                selectedPhaseKey === phase.key
+                  ? completedPhases.has(phase.key)
+                    ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                    : "bg-secondary border-border text-foreground"
+                  : completedPhases.has(phase.key)
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                    : "bg-background text-muted-foreground border-border"
+              }`}
+              aria-pressed={selectedPhaseKey === phase.key}
+            >
+              <span className={`ds-badge ${completedPhases.has(phase.key) ? "text-emerald-700" : "text-muted-foreground"}`}>{i + 1}</span>
               <span className="ds-label">{phase.label}</span>
-            </div>
+            </button>
             {i < phases.length - 1 && <div className="h-px w-6 bg-border shrink-0" />}
           </div>
         ))}
@@ -75,7 +103,9 @@ export default function StudentMilestones() {
       {isLoading ? (
         <p className="text-muted-foreground">Loading...</p>
       ) : (
-        phaseState.map((group) => (
+        phaseState
+          .filter((group) => group.key === selectedPhaseKey)
+          .map((group) => (
           <div key={group.key} className="space-y-3">
             <div className="space-y-1">
               <div className="flex items-center gap-2">

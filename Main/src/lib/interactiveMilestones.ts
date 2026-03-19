@@ -46,13 +46,17 @@ export const phases: PhaseDefinition[] = [
     label: "Topic Search",
     intro: "Narrow your area of interest and validate a strong research topic.",
     fallbackMilestones: [
-      { id: "topic-search-1", title: "Explore 3 possible topics", description: "List three realistic thesis directions connected to your field.", status: "upcoming", due_date: null },
-      { id: "topic-search-2", title: "Compare feasibility", description: "Evaluate data access, scope, and supervisor fit for each option.", status: "upcoming", due_date: null },
-      { id: "topic-search-3", title: "Select final topic", description: "Choose one thesis topic and document your rationale.", status: "upcoming", due_date: null },
+      { id: "topic-search-1", title: "Title and description ", description: "the problem statement or opportunity.", status: "upcoming", due_date: null },
+      { id: "topic-search-2", title: "Type", description: "topic (thesis/research) or job (employment listing)", status: "upcoming", due_date: null },
+      { id: "topic-search-3", title: "Employment status", description: "yes, no, or open (whether the topic can lead to a job)", status: "upcoming", due_date: null },
+      { id: "topic-search-4", title: "Employment type", description: "topic (thesis/research) or job (employment listing)", status: "upcoming", due_date: null },
+      { id: "topic-search-5", title: "Workplace type", description: "on_site, hybrid, or remote", status: "upcoming", due_date: null },
+      { id: "topic-search-6", title: "Degree level", description: "Bachelor, Master, PhD (can target multiple)", status: "upcoming", due_date: null },
+      { id: "topic-search-7", title: "Fields", description: "subject areas and disciplines (many-to-many relationship with [[Fields]])", status: "upcoming", due_date: null },
     ],
     queuedMilestones: [
-      { id: "topic-search-4", title: "Validate topic with supervisor", description: "Confirm that the topic is relevant and academically viable.", status: "upcoming", due_date: null },
-      { id: "topic-search-5", title: "Write topic summary", description: "Prepare a short paragraph summarizing the chosen topic and angle.", status: "upcoming", due_date: null },
+      { id: "topic-search-8", title: "Validate topic with supervisor", description: "Confirm that the topic is relevant and academically viable.", status: "upcoming", due_date: null },
+      { id: "topic-search-9", title: "Write topic summary", description: "Prepare a short paragraph summarizing the chosen topic and angle.", status: "upcoming", due_date: null },
     ],
   },
   {
