@@ -1,12 +1,7 @@
 import { useState } from "react";
 import {
-  useFields,
   useMentorMatches,
-  useMockMentors,
-  usePeerConnections,
   usePeerThesisSimilarity,
-  useStudents,
-  useThesisProjects,
 } from "@/hooks/useStudyondData";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,8 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Users, Sparkles, GraduationCap, Brain, Mail, Send, UserRoundSearch } from "lucide-react";
 import { buildPeerSuggestions } from "@/lib/peerMatching";
-
-const DEMO_STUDENT = "student-11";
+import { DEMO_STUDENT, getInteractiveStudentWorkspace } from "@/lib/interactiveMilestones";
 
 const statusLabels: Record<string, string> = {
   suggested: "Suggested",
@@ -59,11 +53,12 @@ export default function StudentPeers() {
   const [mentorEmailDraft, setMentorEmailDraft] = useState<{ subject: string; body: string } | null>(null);
   const [isGeneratingMentorEmail, setIsGeneratingMentorEmail] = useState(false);
 
-  const { data: connections, isLoading } = usePeerConnections(DEMO_STUDENT);
-  const { data: students } = useStudents();
-  const { data: projects } = useThesisProjects();
-  const { data: fields } = useFields();
-  const { data: mentors } = useMockMentors();
+  const workspace = getInteractiveStudentWorkspace(DEMO_STUDENT);
+  const connections = workspace.peerConnections;
+  const students = workspace.students;
+  const projects = workspace.projects;
+  const fields = workspace.fields;
+  const mentors = workspace.mockMentors;
 
   const {
     data: thesisSimilarityByStudentId,
@@ -161,7 +156,7 @@ export default function StudentPeers() {
   };
 
   const isPageLoading =
-    isLoading || !students || !projects || !fields || isThesisSimilarityLoading;
+    !students.length || !projects.length || !fields.length || isThesisSimilarityLoading || isMentorMatchesLoading;
 
   const selectedSuggestion =
     suggestions.find((suggestion) => suggestion.student.id === selectedPeerId) || null;

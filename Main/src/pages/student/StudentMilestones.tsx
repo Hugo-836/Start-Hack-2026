@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useExperts, useFeedbackLoops, usePeerConnections, useProgressMilestones, useStudents, useSupervisors, useThesisProjects } from "@/hooks/useStudyondData";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -28,14 +27,23 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { CheckCircle2, Circle, Clock, AlertTriangle, MessageSquare, Paperclip, Plus, Send, Sparkles, Trash2, Upload, X } from "lucide-react";
 import {
+  addInteractiveCustomMilestone,
+  attachInteractiveMilestoneFile,
+  deleteInteractiveMilestone,
   DEMO_STUDENT,
-  loadInteractiveMilestones,
+  getInteractivePhaseState,
+  getInteractiveStudentWorkspace,
+  INTERACTIVE_WORKSPACE_EVENT,
+  type ProjectDocument,
+  removeInteractiveMilestoneAttachment,
+  restoreInteractiveDefaultMilestones,
   type MilestoneAttachment,
   type MilestoneItem,
   type MilestoneStatus,
   type PhaseState,
   phases,
   saveInteractiveMilestones,
+  updateInteractiveMilestoneStatus,
 } from "@/lib/interactiveMilestones";
 
 const statusConfig: Record<MilestoneStatus, { icon: typeof Circle; color: string; label: string }> = {
@@ -70,20 +78,33 @@ type SuggestionContext = {
   student: any;
   projects: any[];
   feedbacks: any[];
+  projectDocuments: ProjectDocument[];
 };
 
+function getContextDocuments(context: SuggestionContext) {
+  return [
+    ...context.phaseState.flatMap((phase) =>
+      phase.milestones
+        .filter((milestone) => milestone.attachment)
+        .map((milestone) => ({
+          phaseKey: phase.key,
+          milestoneTitle: milestone.title,
+          name: milestone.attachment?.name || "",
+          type: milestone.attachment?.type || "",
+        })),
+    ),
+    ...context.projectDocuments.map((document) => ({
+      phaseKey: "project",
+      milestoneTitle: "Project file",
+      name: document.name,
+      type: document.type || "",
+    })),
+  ];
+}
+
 function buildAiSuggestions(phaseKey: string, context: SuggestionContext): SuggestedTask[] {
-  const { phaseState, student, projects, feedbacks } = context;
-  const attachments = phaseState.flatMap((phase) =>
-    phase.milestones
-      .filter((milestone) => milestone.attachment)
-      .map((milestone) => ({
-        phaseKey: phase.key,
-        milestoneTitle: milestone.title,
-        name: milestone.attachment?.name || "",
-        type: milestone.attachment?.type || "",
-      })),
-  );
+  const { student, projects, feedbacks } = context;
+  const attachments = getContextDocuments(context);
 
   const attachmentNames = attachments.map((attachment) => attachment.name.toLowerCase());
   const hasPdf = attachments.some((attachment) => attachment.type.includes("pdf") || attachment.name.toLowerCase().endsWith(".pdf"));
@@ -179,13 +200,8 @@ function buildAiSuggestions(phaseKey: string, context: SuggestionContext): Sugge
 }
 
 function buildTaskAdvice(milestone: MilestoneItem, context: SuggestionContext): string[] {
-  const { phaseState, student, projects, feedbacks } = context;
-  const attachments = phaseState.flatMap((phase) =>
-    phase.milestones
-      .filter((item) => item.attachment)
-      .map((item) => item.attachment?.name)
-      .filter(Boolean),
-  ) as string[];
+  const { student, projects, feedbacks } = context;
+  const attachments = getContextDocuments(context).map((item) => item.name).filter(Boolean) as string[];
   const activeProject = projects.find((project) => project.state === "in_progress" || project.state === "agreed") || projects[0];
   const latestFeedback = feedbacks.find((feedback) => feedback.reviewer_feedback);
 
@@ -215,6 +231,7 @@ function buildTaskChatReply(question: string, milestone: MilestoneItem, context:
   const { projects, feedbacks, student } = context;
   const activeProject = projects.find((project) => project.state === "in_progress" || project.state === "agreed") || projects[0];
   const latestFeedback = feedbacks.find((feedback) => feedback.reviewer_feedback);
+  const latestDocument = getContextDocuments(context)[getContextDocuments(context).length - 1];
   const lowerQuestion = question.toLowerCase();
 
   if (lowerQuestion.includes("feedback")) {
@@ -226,7 +243,9 @@ function buildTaskChatReply(question: string, milestone: MilestoneItem, context:
   if (lowerQuestion.includes("document") || lowerQuestion.includes("file") || lowerQuestion.includes("upload")) {
     return milestone.attachment
       ? `Start with ${milestone.attachment.name}. Extract 3 useful points from it, then use those points to move "${milestone.title}" forward.`
-      : `Start from the documents already available in the site, then connect them to "${milestone.title}" before creating new material.`;
+      : latestDocument
+        ? `Start from ${latestDocument.name}, then connect it to "${milestone.title}" before creating new material.`
+        : `Start from the documents already available in the site, then connect them to "${milestone.title}" before creating new material.`;
   }
 
   if (lowerQuestion.includes("start") || lowerQuestion.includes("how")) {
@@ -243,14 +262,8 @@ function buildTaskChatReply(question: string, milestone: MilestoneItem, context:
 }
 
 export default function StudentMilestones() {
-  const { data: milestones, isLoading } = useProgressMilestones(DEMO_STUDENT);
-  const { data: students } = useStudents();
-  const { data: projects } = useThesisProjects();
-  const { data: feedbacks } = useFeedbackLoops(DEMO_STUDENT);
-  const { data: peerConnections } = usePeerConnections(DEMO_STUDENT);
-  const { data: supervisors } = useSupervisors();
-  const { data: experts } = useExperts();
-  const [phaseState, setPhaseState] = useState<PhaseState[]>(() => loadInteractiveMilestones(undefined));
+  const [phaseState, setPhaseState] = useState<PhaseState[]>(() => getInteractivePhaseState());
+  const [workspace, setWorkspace] = useState(() => getInteractiveStudentWorkspace(DEMO_STUDENT));
   const [selectedPhaseKey, setSelectedPhaseKey] = useState<string>(phases[0]?.key ?? "");
   const [activeTab, setActiveTab] = useState<"tasks" | "create">("tasks");
   const [newTaskPhaseKey, setNewTaskPhaseKey] = useState<string>(phases[0]?.key ?? "");
@@ -271,12 +284,12 @@ export default function StudentMilestones() {
     nextStatus: MilestoneStatus;
   } | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const student = students?.find((item: any) => item.id === DEMO_STUDENT);
-  const studentProjects = projects?.filter((item: any) => item.student_id === DEMO_STUDENT) || [];
-  const studentFeedbacks = feedbacks || [];
-  const connectedPeers = (peerConnections || [])
+  const student = workspace.student;
+  const studentProjects = workspace.studentProjects;
+  const studentFeedbacks = workspace.studentFeedbacks;
+  const connectedPeers = workspace.peerConnections
     .map((connection: any) =>
-      students?.find((item: any) =>
+      workspace.students.find((item: any) =>
         item.id === (connection.student_a_id === DEMO_STUDENT ? connection.student_b_id : connection.student_a_id),
       ),
     )
@@ -285,11 +298,11 @@ export default function StudentMilestones() {
     new Set(
       studentProjects.flatMap((project: any) => [
         ...(project.supervisor_ids || []).map((id: string) => {
-          const supervisor = supervisors?.find((item: any) => item.id === id);
+          const supervisor = workspace.supervisors.find((item: any) => item.id === id);
           return supervisor ? `${supervisor.first_name} ${supervisor.last_name}` : null;
         }),
         ...(project.expert_ids || []).map((id: string) => {
-          const expert = experts?.find((item: any) => item.id === id);
+          const expert = workspace.experts.find((item: any) => item.id === id);
           return expert ? `${expert.first_name} ${expert.last_name}` : null;
         }),
       ]),
@@ -301,6 +314,7 @@ export default function StudentMilestones() {
     student,
     projects: studentProjects,
     feedbacks: studentFeedbacks,
+    projectDocuments: workspace.projectDocuments,
   });
   const completedMilestones = phaseState.reduce(
     (total, phase) => total + phase.milestones.filter((milestone) => milestone.status === "completed").length,
@@ -343,13 +357,22 @@ export default function StudentMilestones() {
   };
 
   useEffect(() => {
-    if (!isLoading) {
-      setPhaseState(loadInteractiveMilestones(milestones));
-    }
-  }, [isLoading, milestones]);
+    setPhaseState(getInteractivePhaseState());
+    setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
+  }, []);
 
   useEffect(() => {
     setQuote(inspirationalQuotes[Math.floor(Math.random() * inspirationalQuotes.length)]);
+  }, []);
+
+  useEffect(() => {
+    const syncWorkspace = () => setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
+    window.addEventListener(INTERACTIVE_WORKSPACE_EVENT, syncWorkspace);
+    window.addEventListener("focus", syncWorkspace);
+    return () => {
+      window.removeEventListener(INTERACTIVE_WORKSPACE_EVENT, syncWorkspace);
+      window.removeEventListener("focus", syncWorkspace);
+    };
   }, []);
 
   useEffect(() => {
@@ -384,20 +407,7 @@ export default function StudentMilestones() {
     }
 
     setPhaseState((current) => {
-      const nextState = current.map((phase) => {
-        if (phase.key !== phaseKey) return phase;
-
-        const updatedMilestones = phase.milestones.map((milestone) =>
-          milestone.id === milestoneId
-            ? { ...milestone, status: nextStatus }
-            : milestone,
-        );
-
-        return {
-          ...phase,
-          milestones: updatedMilestones,
-        };
-      });
+      const nextState = updateInteractiveMilestoneStatus(current, phaseKey, milestoneId, nextStatus);
 
       const updatedPhaseIndex = nextState.findIndex((phase) => phase.key === phaseKey);
       const updatedPhase = updatedPhaseIndex >= 0 ? nextState[updatedPhaseIndex] : null;
@@ -430,12 +440,7 @@ export default function StudentMilestones() {
     };
 
     setPhaseState((current) => {
-      const nextState = current.map((phase) =>
-        phase.key === newTaskPhaseKey
-          ? { ...phase, milestones: [...phase.milestones, customMilestone] }
-          : phase,
-      );
-
+      const nextState = addInteractiveCustomMilestone(current, newTaskPhaseKey, customMilestone);
       saveInteractiveMilestones(nextState);
       return nextState;
     });
@@ -506,6 +511,7 @@ export default function StudentMilestones() {
       student,
       projects: studentProjects,
       feedbacks: studentFeedbacks,
+      projectDocuments: workspace.projectDocuments,
     });
 
     try {
@@ -545,12 +551,13 @@ export default function StudentMilestones() {
               ai_summary: feedback.ai_summary,
               status: feedback.status,
             })),
-            attachments: phaseState.flatMap((item) =>
-              item.milestones
-                .filter((entry) => entry.attachment)
-                .map((entry) => entry.attachment?.name)
-                .filter(Boolean),
-            ),
+            attachments: getContextDocuments({
+              phaseState,
+              student,
+              projects: studentProjects,
+              feedbacks: studentFeedbacks,
+              projectDocuments: workspace.projectDocuments,
+            }).map((item) => item.name),
             peers: connectedPeers.map((peer: any) => ({
               first_name: peer.first_name,
               last_name: peer.last_name,
@@ -593,15 +600,7 @@ export default function StudentMilestones() {
 
   const handleDeleteTask = (phaseKey: string, milestoneId: string) => {
     setPhaseState((current) => {
-      const nextState = current.map((phase) =>
-        phase.key === phaseKey
-          ? {
-              ...phase,
-              milestones: phase.milestones.filter((milestone) => milestone.id !== milestoneId),
-            }
-          : phase,
-      );
-
+      const nextState = deleteInteractiveMilestone(current, phaseKey, milestoneId);
       saveInteractiveMilestones(nextState);
       return nextState;
     });
@@ -609,30 +608,7 @@ export default function StudentMilestones() {
 
   const handleRestoreDefaultTasks = () => {
     setPhaseState((current) => {
-      const nextState = current.map((phase) => {
-        const phaseDefinition = phases.find((item) => item.key === phase.key);
-        if (!phaseDefinition) return phase;
-
-        const defaultMilestones = [
-          ...phaseDefinition.fallbackMilestones,
-          ...phaseDefinition.queuedMilestones,
-        ];
-        const existingIds = new Set(phase.milestones.map((milestone) => milestone.id));
-        const restoredDefaults = defaultMilestones.filter((milestone) => !existingIds.has(milestone.id));
-
-        if (restoredDefaults.length === 0) {
-          return phase;
-        }
-
-        return {
-          ...phase,
-          milestones: [...phase.milestones, ...restoredDefaults],
-          hiddenMilestones: phase.hiddenMilestones.filter(
-            (milestone) => !restoredDefaults.some((restored) => restored.id === milestone.id),
-          ),
-        };
-      });
-
+      const nextState = restoreInteractiveDefaultMilestones(current);
       saveInteractiveMilestones(nextState);
       return nextState;
     });
@@ -662,23 +638,7 @@ export default function StudentMilestones() {
       };
 
       setPhaseState((current) => {
-        const nextState = current.map((phase) =>
-          phase.key === phaseKey
-            ? {
-                ...phase,
-                milestones: phase.milestones.map((milestone) =>
-                  milestone.id === milestoneId
-                    ? {
-                        ...milestone,
-                        attachment,
-                        status: milestone.status === "upcoming" ? "in_progress" : milestone.status,
-                      }
-                    : milestone,
-                ),
-              }
-            : phase,
-        );
-
+        const nextState = attachInteractiveMilestoneFile(current, phaseKey, milestoneId, attachment);
         saveInteractiveMilestones(nextState);
         return nextState;
       });
@@ -695,17 +655,7 @@ export default function StudentMilestones() {
 
   const handleRemoveAttachment = (phaseKey: string, milestoneId: string) => {
     setPhaseState((current) => {
-      const nextState = current.map((phase) =>
-        phase.key === phaseKey
-          ? {
-              ...phase,
-              milestones: phase.milestones.map((milestone) =>
-                milestone.id === milestoneId ? { ...milestone, attachment: null } : milestone,
-              ),
-            }
-          : phase,
-      );
-
+      const nextState = removeInteractiveMilestoneAttachment(current, phaseKey, milestoneId);
       saveInteractiveMilestones(nextState);
       return nextState;
     });
@@ -860,10 +810,7 @@ export default function StudentMilestones() {
         ))}
           </div>
 
-          {isLoading ? (
-            <p className="text-muted-foreground">Loading...</p>
-          ) : (
-            phaseState
+          {phaseState
               .filter((group) => group.key === selectedPhaseKey)
               .map((group) => (
                 <div key={group.key} className="space-y-3">
@@ -898,6 +845,7 @@ export default function StudentMilestones() {
                       student,
                       projects: studentProjects,
                       feedbacks: studentFeedbacks,
+                      projectDocuments: workspace.projectDocuments,
                     });
                     const isAdviceExpanded = expandedAdviceIds.includes(milestone.id);
 
@@ -1031,7 +979,7 @@ export default function StudentMilestones() {
                   })()}
                 </div>
               ))
-          )}
+          }
         </TabsContent>
 
         <TabsContent value="create">

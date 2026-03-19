@@ -1,10 +1,14 @@
-import { useFeedbackLoops, useSupervisors, useExperts } from "@/hooks/useStudyondData";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { MessageSquare, Send, CheckCheck, RotateCcw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import {
+  addInteractiveFeedbackSubmission,
+  DEMO_STUDENT,
+  getInteractiveStudentWorkspace,
+  INTERACTIVE_WORKSPACE_EVENT,
+} from "@/lib/interactiveMilestones";
 
-const DEMO_STUDENT = "student-04";
 const statusConfig: Record<string, { icon: any; color: string; label: string; badgeClass: string }> = {
   pending: { icon: Send, color: "text-muted-foreground", label: "Pending", badgeClass: "bg-muted text-muted-foreground" },
   submitted: { icon: MessageSquare, color: "text-blue-600", label: "Submitted", badgeClass: "bg-blue-100 text-blue-800" },
@@ -13,31 +17,39 @@ const statusConfig: Record<string, { icon: any; color: string; label: string; ba
 };
 
 export default function StudentFeedback() {
-  const { data: feedbacks, isLoading } = useFeedbackLoops(DEMO_STUDENT);
-  const { data: supervisors } = useSupervisors();
-  const { data: experts } = useExperts();
+  const [workspace, setWorkspace] = useState(() => getInteractiveStudentWorkspace(DEMO_STUDENT));
   const [file, setFile] = useState<File | null>(null);
-  const getReviewer = (id: string, type: string) => type === "supervisor" ? supervisors?.find((s: any) => s.id === id) : experts?.find((e: any) => e.id === id);
-  const [localFeedbacks, setLocalFeedbacks] = useState<any[]>([]);
-  const allFeedbacks = [...(feedbacks || []), ...localFeedbacks];
+  const getReviewer = (id: string, type: string) => type === "supervisor" ? workspace.supervisors.find((s: any) => s.id === id) : workspace.experts.find((e: any) => e.id === id);
+  const allFeedbacks = workspace.studentFeedbacks;
   const [text, setText] = useState("");
   const [title, setTitle] = useState("");
+
+  useEffect(() => {
+    const syncWorkspace = () => setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
+    window.addEventListener(INTERACTIVE_WORKSPACE_EVENT, syncWorkspace);
+    window.addEventListener("focus", syncWorkspace);
+    return () => {
+      window.removeEventListener(INTERACTIVE_WORKSPACE_EVENT, syncWorkspace);
+      window.removeEventListener("focus", syncWorkspace);
+    };
+  }, []);
+
   const handleSubmit = () => {
     const newFeedback = {
-      id: Math.random(),
+      id: `feedback-custom-${Date.now()}`,
+      student_id: DEMO_STUDENT,
       title: title || "Untitled submission",
       submission_text: text,
       file_name: file?.name || null,
       reviewer_feedback: null,
       ai_summary: null,
       status: "submitted",
-      reviewer_id: supervisors?.[0]?.id,
+      reviewer_id: workspace.supervisors[0]?.id || null,
       reviewer_type: "supervisor",
     };
-  
-    setLocalFeedbacks([newFeedback, ...localFeedbacks]);
-  
-    // reset
+
+    addInteractiveFeedbackSubmission(newFeedback);
+    setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
     setTitle("");
     setText("");
     setFile(null);
@@ -152,7 +164,7 @@ export default function StudentFeedback() {
     );
   })}
 </div>
-{isLoading ? <p className="text-muted-foreground">Loading...</p> : !feedbacks?.length ? (
+          {!allFeedbacks.length ? (
         <Card className="border shadow-none"><CardContent className="pt-6 text-center"><MessageSquare className="h-10 w-10 mx-auto text-muted-foreground mb-3" /><p className="ds-body text-muted-foreground">No feedback loops yet.</p><p className="ds-small text-muted-foreground mt-1">Submit your work to a supervisor or expert for structured feedback.</p></CardContent></Card>
       ) : allFeedbacks.map((fb: any) => {
         const config = statusConfig[fb.status] || statusConfig.pending; const Icon = config.icon; const reviewer = getReviewer(fb.reviewer_id, fb.reviewer_type);

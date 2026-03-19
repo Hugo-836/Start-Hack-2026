@@ -1,10 +1,8 @@
 // src/components/StudentMentors.tsx
-import { useThesisProjects, useSupervisors, useExperts } from "@/hooks/useStudyondData";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Users, GraduationCap, Briefcase } from "lucide-react";
-
-const DEMO_STUDENT = "student-03";
+import { DEMO_STUDENT, getInteractiveStudentWorkspace } from "@/lib/interactiveMilestones";
 
 type MentorItem = {
   id: string;
@@ -17,22 +15,13 @@ type MentorItem = {
 };
 
 export default function StudentMentors() {
-  const { data: projects, isLoading: projectsLoading, error: projectsError } = useThesisProjects();
-  const { data: supervisors, isLoading: supervisorsLoading, error: supervisorsError } = useSupervisors();
-  const { data: experts, isLoading: expertsLoading, error: expertsError } = useExperts();
-
-  const isLoading = projectsLoading || supervisorsLoading || expertsLoading;
-  const error = projectsError || supervisorsError || expertsError;
-
-  const studentProjects = (projects ?? []).filter(
-    (project: any) => project.student_id === DEMO_STUDENT
-  );
+  const { studentProjects, supervisors, experts } = getInteractiveStudentWorkspace(DEMO_STUDENT);
 
   const mentorsMap = new Map<string, MentorItem>();
 
   for (const project of studentProjects) {
     for (const supervisorId of project.supervisor_ids ?? []) {
-      const supervisor = supervisors?.find((s: any) => s.id === supervisorId);
+      const supervisor = supervisors.find((s: any) => s.id === supervisorId);
       if (!supervisor) continue;
 
       const key = `supervisor-${supervisor.id}`;
@@ -54,7 +43,7 @@ export default function StudentMentors() {
     }
 
     for (const expertId of project.expert_ids ?? []) {
-      const expert = experts?.find((e: any) => e.id === expertId);
+      const expert = experts.find((e: any) => e.id === expertId);
       if (!expert) continue;
 
       const key = `expert-${expert.id}`;
@@ -80,14 +69,6 @@ export default function StudentMentors() {
 
   const getInitials = (firstName?: string, lastName?: string) =>
     `${firstName?.[0] ?? "?"}${lastName?.[0] ?? "?"}`;
-
-  if (isLoading) {
-    return <p className="text-muted-foreground">Loading...</p>;
-  }
-
-  if (error) {
-    return <p className="text-red-600">Error while loading mentors.</p>;
-  }
 
   return (
     <div className="space-y-6 max-w-4xl">

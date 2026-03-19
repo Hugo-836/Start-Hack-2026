@@ -1,18 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  useProgressMilestones,
-  useStudents,
-  useSupervisors,
-  useThesisProjects,
-} from "@/hooks/useStudyondData";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, BookOpen, Sparkles } from "lucide-react";
 import {
   DEMO_STUDENT,
+  getInteractivePhaseState,
+  getInteractiveStudentWorkspace,
   INTERACTIVE_MILESTONES_EVENT,
-  loadInteractiveMilestones,
+  INTERACTIVE_WORKSPACE_EVENT,
   phases,
 } from "@/lib/interactiveMilestones";
 
@@ -46,18 +42,14 @@ const milestoneStatusLabels: Record<string, string> = {
 };
 
 export default function StudentDashboard() {
-  const { data: projects } = useThesisProjects();
-  const { data: students } = useStudents();
-  const { data: supervisors } = useSupervisors();
-  const { data: milestones } = useProgressMilestones(DEMO_STUDENT);
-
   const [phaseState, setPhaseState] = useState<any[]>(() =>
-    loadInteractiveMilestones(undefined),
+    getInteractivePhaseState(),
+  );
+  const [workspace, setWorkspace] = useState(() =>
+    getInteractiveStudentWorkspace(DEMO_STUDENT),
   );
 
-  const student = students?.find((s: any) => s.id === DEMO_STUDENT);
-  const studentProjects =
-    projects?.filter((p: any) => p.student_id === DEMO_STUDENT) || [];
+  const { student, studentProjects, supervisors } = workspace;
 
   const activeProject =
     studentProjects.find(
@@ -69,15 +61,18 @@ export default function StudentDashboard() {
   );
 
   useEffect(() => {
-    setPhaseState(loadInteractiveMilestones(milestones));
-  }, [milestones]);
+    setPhaseState(getInteractivePhaseState());
+    setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
+  }, []);
 
   useEffect(() => {
     const syncDashboardProgress = () => {
-      setPhaseState(loadInteractiveMilestones(milestones));
+      setPhaseState(getInteractivePhaseState());
+      setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
     };
 
     window.addEventListener(INTERACTIVE_MILESTONES_EVENT, syncDashboardProgress);
+    window.addEventListener(INTERACTIVE_WORKSPACE_EVENT, syncDashboardProgress);
     window.addEventListener("focus", syncDashboardProgress);
 
     return () => {
@@ -85,9 +80,10 @@ export default function StudentDashboard() {
         INTERACTIVE_MILESTONES_EVENT,
         syncDashboardProgress,
       );
+      window.removeEventListener(INTERACTIVE_WORKSPACE_EVENT, syncDashboardProgress);
       window.removeEventListener("focus", syncDashboardProgress);
     };
-  }, [milestones]);
+  }, []);
 
   const totalMilestones = phaseState.reduce(
     (total, phase) => total + phase.milestones.length,
@@ -163,8 +159,9 @@ export default function StudentDashboard() {
         </p>
       </div>
 
-      <Card className="border shadow-none">
-        <CardContent className="pt-8 space-y-6">
+      <Link to="/student/milestones" className="block">
+        <Card className="border shadow-none hover:shadow-md transition-shadow duration-300 cursor-pointer">
+          <CardContent className="pt-8 space-y-6">
           <div className="flex items-center justify-between gap-4">
             <h2 className="ds-title-sm">Overall Progress</h2>
             <p className="ds-title-cards">{completionPercentage}%</p>
@@ -217,42 +214,44 @@ export default function StudentDashboard() {
               );
             })}
           </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </Link>
 
-      <Card className="border shadow-none">
-  <CardContent className="pt-6">
-    {activeProject ? (
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-start gap-3">
-            <BookOpen className="h-5 w-5 text-muted-foreground shrink-0 mt-1" />
-            <div className="min-w-0">
-              <p className="ds-label text-muted-foreground mb-2">Thesis Theme</p>
-              <p className="ds-title-sm leading-tight">{activeProject.title}</p>
+      <Link to="/student/project" className="block">
+        <Card className="border shadow-none hover:shadow-md transition-shadow duration-300 cursor-pointer">
+          <CardContent className="pt-6">
+            {activeProject ? (
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-start gap-3">
+                    <BookOpen className="h-5 w-5 text-muted-foreground shrink-0 mt-1" />
+                    <div className="min-w-0">
+                      <p className="ds-label text-muted-foreground mb-2">Thesis Theme</p>
+                      <p className="ds-title-sm leading-tight">{activeProject.title}</p>
 
-              {(activeProject.description || activeProject.motivation) && (
-                <p className="ds-body text-muted-foreground mt-3">
-                  {activeProject.description ||
-                    activeProject.motivation}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
+                      {(activeProject.description || activeProject.motivation) && (
+                        <p className="ds-body text-muted-foreground mt-3">
+                          {activeProject.description || activeProject.motivation}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
-        <Badge className={`${stateColors[activeProject.state]} border-0 shrink-0`}>
-          {stateLabels[activeProject.state]}
-        </Badge>
-      </div>
-    ) : (
-      <div>
-        <p className="ds-label text-muted-foreground mb-2">Thesis Theme</p>
-        <p className="ds-title-sm">You do not have a thesis for now</p>
-      </div>
-    )}
-  </CardContent>
-</Card>
+                <Badge className={`${stateColors[activeProject.state]} border-0 shrink-0`}>
+                  {stateLabels[activeProject.state]}
+                </Badge>
+              </div>
+            ) : (
+              <div>
+                <p className="ds-label text-muted-foreground mb-2">Thesis Theme</p>
+                <p className="ds-title-sm">You do not have a thesis for now</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </Link>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="border shadow-none h-full">
