@@ -9,6 +9,13 @@ export type PeerSuggestion = {
   score: number;
   sharedTopics: string[];
   matchReason: string;
+  thesisSimilarityScore: number;
+  thesisSimilarityReason: string | null;
+};
+
+export type ThesisSimilarityMatch = {
+  score: number;
+  reason: string;
 };
 
 function unique(values: string[]) {
@@ -36,8 +43,16 @@ export function buildPeerSuggestions(args: {
   projects: ThesisProject[];
   fields?: Field[];
   limit?: number;
+  thesisSimilarityByStudentId?: Record<string, ThesisSimilarityMatch>;
 }): PeerSuggestion[] {
-  const { currentStudentId, students, projects: _projects, fields = [], limit = 3 } = args;
+  const {
+    currentStudentId,
+    students,
+    projects: _projects,
+    fields = [],
+    limit = 3,
+    thesisSimilarityByStudentId = {},
+  } = args;
   const currentStudent = students.find((student) => student.id === currentStudentId);
 
   if (!currentStudent) {
@@ -62,8 +77,14 @@ export function buildPeerSuggestions(args: {
       const sameUniversity =
         Boolean(currentStudent.university_id) &&
         currentStudent.university_id === student.university_id;
+      const thesisSimilarity = thesisSimilarityByStudentId[student.id];
+      const thesisSimilarityScore = Math.min(
+        90,
+        Math.max(0, Math.round((thesisSimilarity?.score || 0) * 0.9)),
+      );
 
       let score = 0;
+      if (thesisSimilarityScore) score += thesisSimilarityScore;
       if (sharedFieldNames.length) score += Math.min(40, sharedFieldNames.length * 20);
       if (sharedSkills.length) score += Math.min(30, sharedSkills.length * 10);
       if (sharedObjectives.length) score += Math.min(20, sharedObjectives.length * 10);
@@ -76,7 +97,9 @@ export function buildPeerSuggestions(args: {
       ]).slice(0, 4);
 
       let matchReason = "Same degree with a partially overlapping academic profile.";
-      if (sharedFieldNames.length && sharedSkills.length && sameUniversity) {
+      if (thesisSimilarity?.reason && thesisSimilarityScore >= 55) {
+        matchReason = `AI thesis match: ${thesisSimilarity.reason}`;
+      } else if (sharedFieldNames.length && sharedSkills.length && sameUniversity) {
         matchReason = `Same degree, same university, and strong overlap in ${sharedFieldNames[0]} with shared skills like ${sharedSkills[0]}.`;
       } else if (sharedFieldNames.length) {
         matchReason = `Same degree and both of you work in ${sharedFieldNames.slice(0, 2).join(" / ")}.`;
@@ -93,6 +116,8 @@ export function buildPeerSuggestions(args: {
         score,
         sharedTopics,
         matchReason,
+        thesisSimilarityScore,
+        thesisSimilarityReason: thesisSimilarity?.reason || null,
       };
     })
     .filter((suggestion) => suggestion.score > 0)

@@ -98,5 +98,81 @@ describe("buildPeerSuggestions", () => {
     expect(suggestions[0].score).toBe(50);
     expect(suggestions[0].sharedTopics).toContain("artificial intelligence");
     expect(suggestions[0].matchReason).toContain("Same degree");
+    expect(suggestions[0].thesisSimilarityScore).toBe(0);
+  });
+
+  it("gives a strong weight to AI thesis similarity in the final ranking", () => {
+    const suggestions = buildPeerSuggestions({
+      currentStudentId: "student-1",
+      students: [
+        {
+          id: "student-1",
+          user_id: null,
+          first_name: "Alice",
+          last_name: "Meyer",
+          email: "alice@example.com",
+          degree: "msc",
+          study_program_id: null,
+          university_id: "unisg",
+          skills: ["python", "nlp"],
+          about: null,
+          objectives: ["topic"],
+          field_ids: ["field-ai"],
+          created_at: "2026-03-18T00:00:00Z",
+          updated_at: "2026-03-18T00:00:00Z",
+        },
+        {
+          id: "student-2",
+          user_id: null,
+          first_name: "Ben",
+          last_name: "Keller",
+          email: "ben@example.com",
+          degree: "msc",
+          study_program_id: null,
+          university_id: "other",
+          skills: ["python"],
+          about: null,
+          objectives: ["topic"],
+          field_ids: ["field-ai"],
+          created_at: "2026-03-18T00:00:00Z",
+          updated_at: "2026-03-18T00:00:00Z",
+        },
+        {
+          id: "student-4",
+          user_id: null,
+          first_name: "Dana",
+          last_name: "Graf",
+          email: "dana@example.com",
+          degree: "msc",
+          study_program_id: null,
+          university_id: "unisg",
+          skills: ["python", "nlp"],
+          about: null,
+          objectives: ["topic"],
+          field_ids: ["field-ai"],
+          created_at: "2026-03-18T00:00:00Z",
+          updated_at: "2026-03-18T00:00:00Z",
+        },
+      ],
+      projects: [],
+      fields: [
+        { id: "field-ai", name: "Artificial Intelligence", created_at: "2026-03-18T00:00:00Z" },
+      ],
+      thesisSimilarityByStudentId: {
+        "student-2": {
+          score: 95,
+          reason: "Both theses focus on NLP methods for clinical text analysis.",
+        },
+        "student-4": {
+          score: 20,
+          reason: "There is only limited thesis overlap.",
+        },
+      },
+    });
+
+    expect(suggestions).toHaveLength(2);
+    expect(suggestions[0].student.id).toBe("student-2");
+    expect(suggestions[0].thesisSimilarityScore).toBe(86);
+    expect(suggestions[0].matchReason).toContain("AI thesis match");
   });
 });

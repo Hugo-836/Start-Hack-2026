@@ -1,7 +1,13 @@
-import { useFields, usePeerConnections, useStudents, useThesisProjects } from "@/hooks/useStudyondData";
+import {
+  useFields,
+  usePeerConnections,
+  usePeerThesisSimilarity,
+  useStudents,
+  useThesisProjects,
+} from "@/hooks/useStudyondData";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Users, Sparkles, GraduationCap } from "lucide-react";
+import { Users, Sparkles, GraduationCap, Brain } from "lucide-react";
 import { buildPeerSuggestions } from "@/lib/peerMatching";
 
 const DEMO_STUDENT = "student-03";
@@ -23,6 +29,8 @@ export default function StudentPeers() {
   const { data: students } = useStudents();
   const { data: projects } = useThesisProjects();
   const { data: fields } = useFields();
+  const { data: thesisSimilarityByStudentId, isLoading: isThesisSimilarityLoading } =
+    usePeerThesisSimilarity(DEMO_STUDENT, students, projects);
 
   const getStudent = (id: string) => students?.find((s: any) => s.id === id);
   const getPeer = (conn: any) =>
@@ -35,10 +43,12 @@ export default function StudentPeers() {
           students,
           projects,
           fields,
+          thesisSimilarityByStudentId,
         })
       : [];
 
-  const isPageLoading = isLoading || !students || !projects || !fields;
+  const isPageLoading =
+    isLoading || !students || !projects || !fields || isThesisSimilarityLoading;
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -106,6 +116,22 @@ export default function StudentPeers() {
                         <p className="ds-small text-muted-foreground">
                           {suggestion.matchReason}
                         </p>
+
+                        {suggestion.thesisSimilarityScore > 0 && (
+                          <div className="rounded-lg border border-ai/20 bg-ai/5 px-3 py-2">
+                            <div className="flex items-center gap-2 text-ai">
+                              <Brain className="h-4 w-4" />
+                              <span className="ds-label">
+                                AI thesis similarity {suggestion.thesisSimilarityScore}
+                              </span>
+                            </div>
+                            {suggestion.thesisSimilarityReason && (
+                              <p className="ds-small text-muted-foreground mt-1">
+                                {suggestion.thesisSimilarityReason}
+                              </p>
+                            )}
+                          </div>
+                        )}
 
                         {suggestion.sharedTopics.length > 0 && (
                           <div className="flex flex-wrap gap-1.5">

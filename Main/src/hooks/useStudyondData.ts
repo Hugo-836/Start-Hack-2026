@@ -1,5 +1,25 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
+
+type Student = Database["public"]["Tables"]["students"]["Row"];
+type ThesisProject = Database["public"]["Tables"]["thesis_projects"]["Row"];
+type ThesisSimilarityResponse = {
+  matches?: Array<{
+    studentId: string;
+    score: number;
+    reason: string;
+  }>;
+};
+
+function getPrimaryProject(projects: ThesisProject[], studentId: string) {
+  const studentProjects = projects.filter((project) => project.student_id === studentId);
+  return (
+    studentProjects.find(
+      (project) => project.state === "in_progress" || project.state === "agreed",
+    ) || studentProjects[0]
+  );
+}
 
 export function useStudents() {
   return useQuery({
@@ -140,5 +160,97 @@ export function useFields() {
       if (error) throw error;
       return data;
     },
+  });
+}
+
+export function usePeerThesisSimilarity(
+  currentStudentId: string,
+  students?: Student[],
+  projects?: ThesisProject[],
+) {
+  const currentStudent = students?.find((student) => student.id === currentStudentId);
+  const currentProject = projects ? getPrimaryProject(projects, currentStudentId) : null;
+  const candidateStudents =
+    students?.filter(
+      (student) =>
+        student.id !== currentStudentId && student.degree === currentStudent?.degree,
+    ) || [];
+  const candidateProjects =
+    projects && candidateStudents.length
+      ? candidateStudents
+          .map((student) => {
+            const project = getPrimaryProject(projects, student.id);
+            if (!project) return null;
+            return {
+              studentId: student.id,
+              studentName: `${student.first_name} ${student.last_name}`,
+              degree: student.degree,
+              universityId: student.university_id,
+              thesis: {
+                title: project.title,
+                description: project.description,
+                motivation: project.motivation,
+              },
+            };
+          })
+          .filter(Boolean)
+      : [];
+
+  return useQuery({
+    queryKey: [
+      "peer-thesis-similarity",
+      currentStudentId,
+      currentProject?.id || "no-project",
+      candidateProjects.map((candidate) => candidate!.studentId).join(","),
+      candidateProjects
+        .map((candidate) => `${candidate!.studentId}:${candidate!.thesis.title}`)
+        .join("|"),
+    ],
+    queryFn: async () => {
+      if (!currentStudent || !currentProject || candidateProjects.length === 0) {
+        return {};
+      }
+
+      const { data, error } = await supabase.functions.invoke<ThesisSimilarityResponse>(
+        "peer-thesis-similarity",
+        {
+          body: {
+            currentStudent: {
+              id: currentStudent.id,
+              name: `${currentStudent.first_name} ${currentStudent.last_name}`,
+              degree: currentStudent.degree,
+              universityId: currentStudent.university_id,
+              skills: currentStudent.skills,
+              objectives: currentStudent.objectives,
+              fieldIds: currentStudent.field_ids,
+              about: currentStudent.about,
+            },
+            currentThesis: {
+              title: currentProject.title,
+              description: currentProject.description,
+              motivation: currentProject.motivation,
+            },
+            candidates: candidateProjects,
+          },
+        },
+      );
+
+      if (error) {
+        console.warn("peer-thesis-similarity invoke failed", error);
+        return {};
+      }
+
+      return Object.fromEntries(
+        (data?.matches || []).map((match) => [
+          match.studentId,
+          {
+            score: match.score,
+            reason: match.reason,
+          },
+        ]),
+      );
+    },
+    enabled: Boolean(currentStudent && currentProject && candidateProjects.length > 0),
+    staleTime: 1000 * 60 * 10,
   });
 }
