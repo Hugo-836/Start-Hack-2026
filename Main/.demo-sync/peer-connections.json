@@ -3,7 +3,7 @@
     "id": "peer-connection-student-01-student-06",
     "student_a_id": "student-01",
     "student_b_id": "student-06",
-    "match_reason": "AI thesis match: Both focus on privacy-preserving technologies, though different domains (health vs telecom networks)",
+    "match_reason": "Same degree and both of you work in computer science.",
     "shared_topics": [
       "computer science",
       "python",
@@ -11,6 +11,6 @@
       "career_start"
     ],
     "status": "accepted",
-    "created_at": "2026-03-19T21:33:59.740Z"
+    "created_at": "2026-03-19T21:39:55.961Z"
   }
 ]

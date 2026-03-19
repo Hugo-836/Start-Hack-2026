@@ -510,6 +510,14 @@ export default function StudentSharedDocuments() {
     }, {});
   }, [currentStudentDocuments, documentRequests]);
 
+  const targetedDocumentRequests = useMemo(() => {
+    return documentRequests.filter(
+      (request) =>
+        request.student_id !== student?.id &&
+        (explicitlyRequestedDocumentsByRequestId[request.id]?.length || 0) > 0,
+    );
+  }, [documentRequests, explicitlyRequestedDocumentsByRequestId, student?.id]);
+
   const handleSearchRequestDocuments = () => {
     if (!student?.id || !requestTitle.trim()) return;
 
@@ -671,113 +679,14 @@ export default function StudentSharedDocuments() {
   );
 
   const runDocumentMatching = async (notifyOnNewMatches = false) => {
-    const openRequests = documentRequests.filter(
-      (request) =>
-        request.student_id !== student?.id &&
-        !(explicitlyRequestedDocumentsByRequestId[request.id]?.length > 0),
-    );
-    if (openRequests.length === 0 || currentStudentDocuments.length === 0) {
+    if (currentStudentDocuments.length === 0) {
       setDocumentMatchesByRequest(explicitlyRequestedDocumentsByRequestId);
       return;
     }
 
     try {
-      setIsMatchingDocuments(true);
-      const response = await fetch("/api/shared-document-match", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          requests: openRequests.map((request) => ({
-            id: request.id,
-            title: request.title,
-            theme: request.theme,
-            keywords: request.keywords,
-            description: request.description,
-            ownerName: request.ownerName,
-          })),
-          documents: currentStudentDocuments.map((document) => ({
-            id: document.id,
-            name: document.name,
-            type: document.type,
-            projectTitle: document.projectTitle,
-            textPreview: document.textPreview,
-          })),
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Shared document matching failed with status ${response.status}`);
-      }
-
-      const data = (await response.json()) as {
-        matches?: Array<{
-          requestId?: string;
-          suggestedDocuments?: Array<{
-            documentId?: string;
-            reason?: string;
-            confidence?: "high" | "medium" | "low";
-          }>;
-        }>;
-      };
-
-      const nextMatches = (data.matches || []).reduce<Record<string, Array<{
-        documentId: string;
-        reason: string;
-        confidence: "high" | "medium" | "low";
-      }>>>((accumulator, match) => {
-        if (!match.requestId) return accumulator;
-
-        accumulator[match.requestId] = Array.isArray(match.suggestedDocuments)
-          ? match.suggestedDocuments
-              .filter((item): item is { documentId: string; reason: string; confidence?: "high" | "medium" | "low" } =>
-                Boolean(item.documentId && item.reason),
-              )
-              .map((item) => ({
-                documentId: item.documentId,
-                reason: item.reason,
-                confidence: item.confidence || "medium",
-              }))
-          : [];
-
-        return accumulator;
-      }, {});
-
-      setDocumentMatchesByRequest({
-        ...nextMatches,
-        ...explicitlyRequestedDocumentsByRequestId,
-      });
-
-      if (notifyOnNewMatches) {
-        const storedAlertIds = getStoredAlertIds();
-        const newAlertIds: string[] = [];
-
-        Object.entries(nextMatches).forEach(([requestId, matches]) => {
-          matches.forEach((match) => {
-            const alertId = `${requestId}:${match.documentId}`;
-            if (!storedAlertIds.has(alertId)) {
-              newAlertIds.push(alertId);
-              storedAlertIds.add(alertId);
-            }
-          });
-        });
-
-        if (newAlertIds.length > 0) {
-          storeAlertIds(storedAlertIds);
-
-          const [firstRequestId, firstDocumentId] = newAlertIds[0].split(":");
-          const request = documentRequests.find((item) => item.id === firstRequestId);
-          const document = currentStudentDocuments.find((item) => item.id === firstDocumentId);
-
-          toast("AI match found", {
-            description:
-              request && document
-                ? `"${document.name}" could help with "${request.title}".`
-                : `${newAlertIds.length} new document match${newAlertIds.length > 1 ? "es" : ""} found.`,
-          });
-        }
-      }
+      setIsMatchingDocuments(false);
+      setDocumentMatchesByRequest(explicitlyRequestedDocumentsByRequestId);
     } catch {
       setDocumentMatchesByRequest(explicitlyRequestedDocumentsByRequestId);
     } finally {
@@ -791,10 +700,13 @@ export default function StudentSharedDocuments() {
 
   useEffect(() => {
     if (currentStudentDocuments.length === 0) return;
-    if (documentRequests.every((request) => request.student_id === student?.id)) return;
+    if (targetedDocumentRequests.length === 0) {
+      setDocumentMatchesByRequest({});
+      return;
+    }
 
     void runDocumentMatching(true);
-  }, [currentStudentDocuments, documentRequests, explicitlyRequestedDocumentsByRequestId, student?.id]);
+  }, [currentStudentDocuments, explicitlyRequestedDocumentsByRequestId, targetedDocumentRequests]);
 
   const handleAssistantSearch = async () => {
     const normalizedQuery = assistantQuery.trim();
@@ -1361,15 +1273,13 @@ export default function StudentSharedDocuments() {
             <p className="ds-body text-muted-foreground">
               Upload project files first in <Link to="/student/project" className="underline">My Project</Link> to get AI sharing suggestions.
             </p>
-          ) : documentRequests.filter((request) => request.student_id !== student?.id).length === 0 ? (
+          ) : targetedDocumentRequests.length === 0 ? (
             <p className="ds-body text-muted-foreground">
-              No open requests from other students yet.
+              No document requests are targeting your files yet.
             </p>
           ) : (
             <div className="space-y-4">
-              {documentRequests
-                .filter((request) => request.student_id !== student?.id)
-                .map((request) => {
+              {targetedDocumentRequests.map((request) => {
                   const matches = documentMatchesByRequest[request.id] || [];
 
                   return (

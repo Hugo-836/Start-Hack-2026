@@ -1,7 +1,7 @@
 [
   {
-    "id": "received-doc-shared-doc-request-1773955653779-seed-project-01_doc_1",
-    "request_id": "shared-doc-request-1773955653779",
+    "id": "received-doc-shared-doc-request-1773956576743-seed-project-01_doc_1",
+    "request_id": "shared-doc-request-1773956576743",
     "recipient_student_id": "student-01",
     "source_document_id": "seed-project-01_doc_1",
     "source_owner_student_id": "student-04",
@@ -13,6 +13,6 @@
     "size": 2268,
     "dataUrl": "/fake_project_pdfs_en_v2/project-01_doc_1.pdf",
     "created_at": "2026-03-19T17:31:02.000Z",
-    "granted_at": "2026-03-19T21:28:10.932Z"
+    "granted_at": "2026-03-19T21:43:09.162Z"
   }
 ]
