@@ -777,10 +777,6 @@ export default function StudentSharedDocuments() {
             Explore documents shared across student projects to find inspiration, structure, and useful examples.
           </p>
         </div>
-
-        <Button asChild variant="outline">
-          <Link to="/student/project">Share from My Project</Link>
-        </Button>
       </div>
 
       <Card className="border border-ai/30 shadow-none">

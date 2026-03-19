@@ -519,6 +519,16 @@ export default function StudentDashboard() {
                           {activeProject.description || activeProject.motivation}
                         </p>
                       )}
+
+                      <div className="mt-4 flex items-start gap-2">
+                        <Building2 className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                        <div>
+                          <p className="ds-label text-muted-foreground mb-1">University</p>
+                          <p className="ds-small">
+                            {assignedUniversity?.name || "No university available"}
+                          </p>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -604,31 +614,12 @@ export default function StudentDashboard() {
                   </div>
                 </div>
 
-                <div className="flex items-start gap-2">
-                  <Building2 className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                  <div>
-                    <p className="ds-label text-muted-foreground mb-1">University</p>
-                    <p className="ds-small">
-                      {assignedUniversity?.name || "No university available"}
-                    </p>
-                  </div>
-                </div>
               </div>
             ) : (
               <div className="mt-6 space-y-4">
                 <div>
                   <p className="ds-label text-muted-foreground mb-1">Assigned Supervisor</p>
                   <p className="ds-title-cards">You do not have a supervisor for now</p>
-                </div>
-
-                <div className="flex items-start gap-2">
-                  <Building2 className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                  <div>
-                    <p className="ds-label text-muted-foreground mb-1">University</p>
-                    <p className="ds-small text-muted-foreground">
-                      {assignedUniversity?.name || "No university available"}
-                    </p>
-                  </div>
                 </div>
               </div>
             )}
@@ -804,7 +795,7 @@ export default function StudentDashboard() {
                 <Badge variant="secondary" className="border-0">
                   {peerSharedDocuments.length} peer docs
                 </Badge>
-                <Badge className="bg-ai text-white border-0">
+                <Badge variant="secondary" className="border-0">
                   {openPeerRequests.length} requests
                 </Badge>
               </div>
