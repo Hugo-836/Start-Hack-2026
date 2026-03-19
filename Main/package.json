@@ -9,6 +9,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
+    "seed:project-docs": "node ./scripts/generate-seed-project-documents.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

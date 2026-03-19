@@ -9,11 +9,13 @@ import { toast } from "@/components/ui/sonner";
 import { BookOpen, FileSearch, FileText, Search, Quote, Sparkles, Tags, Users } from "lucide-react";
 import {
   addInteractiveSharedDocumentRequest,
+  deleteInteractiveSharedDocumentRequest,
   DEMO_STUDENT,
   getInteractiveSharedDocumentRequests,
   getInteractiveProjectDocuments,
   getInteractiveStudentWorkspace,
   INTERACTIVE_WORKSPACE_EVENT,
+  upsertInteractiveSharedDocumentRequest,
 } from "@/lib/interactiveMilestones";
 
 const SHARED_DOCUMENT_ALERTS_KEY = "studyond-shared-document-alerts";
@@ -28,6 +30,17 @@ function formatFileSize(size: number) {
   }
 
   return `${size} B`;
+}
+
+function normalizeSearchValue(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function tokenizeSearchValue(value: string) {
+  return normalizeSearchValue(value)
+    .split(/[\s,.;:!?/\\()[\]"-]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2);
 }
 
 function extractDocumentPreview(dataUrl: string, type?: string | null) {
@@ -81,6 +94,13 @@ export default function StudentSharedDocuments() {
   const [requestTheme, setRequestTheme] = useState("");
   const [requestKeywords, setRequestKeywords] = useState("");
   const [requestDescription, setRequestDescription] = useState("");
+  const [requestSearchParams, setRequestSearchParams] = useState<{
+    title: string;
+    theme: string;
+    keywords: string;
+    description: string;
+  } | null>(null);
+  const [activeSearchRequestId, setActiveSearchRequestId] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState(() => getInteractiveStudentWorkspace(DEMO_STUDENT));
   const { student, students, projects, peerConnections } = workspace;
   const [allDocuments, setAllDocuments] = useState(() => getInteractiveProjectDocuments());
@@ -123,7 +143,7 @@ export default function StudentSharedDocuments() {
   );
 
   const sharedDocuments = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    const normalizedQuery = normalizeSearchValue(query);
 
     return allDocuments
       .map((document) => {
@@ -163,6 +183,93 @@ export default function StudentSharedDocuments() {
       });
   }, [allDocuments, peerIds, projects, query, student?.id, students]);
 
+  const requestDocumentSuggestions = useMemo(() => {
+    if (!requestSearchParams) {
+      return [];
+    }
+
+    const requestTokens = Array.from(
+      new Set([
+        ...tokenizeSearchValue(requestSearchParams.title),
+        ...tokenizeSearchValue(requestSearchParams.theme),
+        ...requestSearchParams.keywords
+          .split(",")
+          .flatMap((item) => tokenizeSearchValue(item)),
+        ...tokenizeSearchValue(requestSearchParams.description),
+      ]),
+    );
+
+    if (requestTokens.length === 0) {
+      return [];
+    }
+
+    return allDocuments
+      .map((document) => {
+        const project = projects.find((item: any) => item.id === document.project_id);
+        const owner = students.find((item: any) => item.id === project?.student_id);
+        const ownerName = owner ? `${owner.first_name} ${owner.last_name}` : "Unknown student";
+        const visibility =
+          owner?.id === student?.id ? "mine" : peerIds.has(owner?.id) ? "peer" : "student";
+        const searchableText = normalizeSearchValue(
+          [
+            document.name,
+            project?.title || "",
+            ownerName,
+            document.type,
+          ].join(" "),
+        );
+        const matchedTokens = requestTokens.filter((token) => searchableText.includes(token));
+
+        return {
+          ...document,
+          ownerName,
+          projectTitle: project?.title || "Untitled project",
+          ownerId: owner?.id || null,
+          visibility,
+          matchScore: matchedTokens.length,
+          matchedTokens,
+        };
+      })
+      .filter((document) => document.matchScore > 0 && document.ownerId !== student?.id)
+      .sort((a, b) => {
+        if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
+
+        const visibilityOrder = { peer: 0, student: 1, mine: 2 };
+        const visibilityDiff = visibilityOrder[a.visibility] - visibilityOrder[b.visibility];
+        if (visibilityDiff !== 0) return visibilityDiff;
+
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      })
+      .slice(0, 6);
+  }, [
+    allDocuments,
+    peerIds,
+    projects,
+    requestSearchParams,
+    student?.id,
+    students,
+  ]);
+
+  useEffect(() => {
+    if (!requestSearchParams) return;
+
+    if (
+      requestTitle !== requestSearchParams.title ||
+      requestTheme !== requestSearchParams.theme ||
+      requestKeywords !== requestSearchParams.keywords ||
+      requestDescription !== requestSearchParams.description
+    ) {
+      setRequestSearchParams(null);
+      setActiveSearchRequestId(null);
+    }
+  }, [
+    requestDescription,
+    requestKeywords,
+    requestSearchParams,
+    requestTheme,
+    requestTitle,
+  ]);
+
   const documentRequests = useMemo(() => {
     return sharedRequests
       .map((request) => {
@@ -197,6 +304,7 @@ export default function StudentSharedDocuments() {
         return {
           ...document,
           projectTitle: project?.title || "Untitled project",
+          displayTitle: document.display_title || project?.title || document.name,
           textPreview: extractDocumentPreview(document.dataUrl, document.type),
         };
       });
@@ -215,34 +323,78 @@ export default function StudentSharedDocuments() {
           ...document,
           ownerName: owner ? `${owner.first_name} ${owner.last_name}` : "Unknown student",
           projectTitle: project?.title || "Untitled project",
+          displayTitle: document.display_title || project?.title || document.name,
           textPreview: extractDocumentPreview(document.dataUrl, document.type),
         };
       });
   }, [allDocuments, projects, student?.id, students]);
 
-  const handlePostRequest = () => {
-    const title = requestTitle.trim();
-    if (!title || !student?.id) return;
+  const handleSearchRequestDocuments = () => {
+    if (!requestTitle.trim()) return;
 
-    addInteractiveSharedDocumentRequest({
-      id: `shared-doc-request-${Date.now()}`,
+    setRequestSearchParams({
+      title: requestTitle,
+      theme: requestTheme,
+      keywords: requestKeywords,
+      description: requestDescription,
+    });
+    setActiveSearchRequestId(null);
+  };
+
+  const handleSelectSuggestedDocument = (document: (typeof requestDocumentSuggestions)[number]) => {
+    if (!student?.id || !requestSearchParams) return;
+
+    const requestId = activeSearchRequestId || `shared-doc-request-${Date.now()}`;
+    const existingRequest = sharedRequests.find((item) => item.id === requestId);
+    const nextMatchedDocuments = existingRequest?.matched_documents || [];
+    if (nextMatchedDocuments.some((item) => item.document_id === document.id)) {
+      return;
+    }
+
+    const nextRequest = {
+      id: requestId,
       student_id: student.id,
-      title,
-      theme: requestTheme.trim() || null,
-      keywords: requestKeywords
+      title: requestSearchParams.title.trim(),
+      theme: requestSearchParams.theme.trim() || null,
+      keywords: requestSearchParams.keywords
         .split(",")
         .map((item) => item.trim())
         .filter(Boolean),
-      description: requestDescription.trim() || null,
-      created_at: new Date().toISOString(),
-    });
+      description: requestSearchParams.description.trim() || null,
+      created_at: existingRequest?.created_at || new Date().toISOString(),
+      matched_documents: [
+        ...nextMatchedDocuments,
+        {
+          document_id: document.id,
+          owner_name: document.ownerName,
+          project_title: document.projectTitle,
+        },
+      ],
+    };
 
-    setRequestTitle("");
-    setRequestTheme("");
-    setRequestKeywords("");
-    setRequestDescription("");
+    if (existingRequest) {
+      upsertInteractiveSharedDocumentRequest(nextRequest);
+    } else {
+      addInteractiveSharedDocumentRequest(nextRequest);
+    }
+
+    setActiveSearchRequestId(requestId);
     setSharedRequests(getInteractiveSharedDocumentRequests());
   };
+
+  const handleDeleteRequest = (requestId: string) => {
+    deleteInteractiveSharedDocumentRequest(requestId);
+    if (activeSearchRequestId === requestId) {
+      setActiveSearchRequestId(null);
+    }
+    setSharedRequests(getInteractiveSharedDocumentRequests());
+  };
+
+  const selectedDocumentIdsForActiveRequest = new Set(
+    (sharedRequests.find((item) => item.id === activeSearchRequestId)?.matched_documents || []).map(
+      (item) => item.document_id,
+    ),
+  );
 
   const runDocumentMatching = async (notifyOnNewMatches = false) => {
     const openRequests = documentRequests.filter((request) => request.student_id !== student?.id);
@@ -378,21 +530,21 @@ export default function StudentSharedDocuments() {
           query: normalizedQuery,
           ownDocuments: currentStudentDocuments.map((document) => ({
             id: document.id,
-            name: document.name,
+            name: document.displayTitle,
             type: document.type,
             ownerName: student ? `${student.first_name} ${student.last_name}` : "You",
             ownerType: "self",
             projectTitle: document.projectTitle,
-            textPreview: document.textPreview,
+            textPreview: document.textPreview || document.displayTitle,
           })),
           peerDocuments: peerDocuments.map((document) => ({
             id: document.id,
-            name: document.name,
+            name: document.displayTitle,
             type: document.type,
             ownerName: document.ownerName,
             ownerType: "peer",
             projectTitle: document.projectTitle,
-            textPreview: document.textPreview,
+            textPreview: document.textPreview || document.displayTitle,
           })),
           requests: documentRequests.map((request) => ({
             id: request.id,
@@ -551,7 +703,7 @@ export default function StudentSharedDocuments() {
                       <div key={`own-${match.documentId}`} className="rounded-lg border border-ai/15 bg-ai/5 p-3">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="ds-label">{document.name}</p>
+                            <p className="ds-label">{document.displayTitle}</p>
                             <p className="ds-caption mt-1 text-muted-foreground">{document.projectTitle}</p>
                           </div>
                           <a href={document.dataUrl} download={document.name} className="text-sm font-medium text-ai-solid hover:underline">
@@ -576,7 +728,7 @@ export default function StudentSharedDocuments() {
                       <div key={`peer-${match.documentId}`} className="rounded-lg border border-ai/15 bg-ai/5 p-3">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="ds-label">{document.name}</p>
+                            <p className="ds-label">{document.displayTitle}</p>
                             <p className="ds-caption mt-1 text-muted-foreground">
                               {document.ownerName} · {document.projectTitle}
                             </p>
@@ -649,7 +801,7 @@ export default function StudentSharedDocuments() {
               <div>
                 <h2 className="ds-title-cards">Ask for a document</h2>
                 <p className="ds-small text-muted-foreground mt-1">
-                  Post a short request when you are looking for a precise example, template, dataset, or document theme.
+                  Search for relevant peer documents, then add the ones you want into your request list.
                 </p>
               </div>
             </div>
@@ -693,10 +845,77 @@ export default function StudentSharedDocuments() {
             </div>
 
             <div className="flex justify-end">
-              <Button onClick={handlePostRequest} disabled={!requestTitle.trim()}>
-                Post request
+              <Button onClick={handleSearchRequestDocuments} disabled={!requestTitle.trim()}>
+                Search
               </Button>
             </div>
+
+            {requestDocumentSuggestions.length > 0 ? (
+              <div className="space-y-3 rounded-xl border bg-secondary/20 p-4">
+                <div>
+                  <p className="ds-label">Suggested documents</p>
+                  <p className="ds-small text-muted-foreground mt-1">
+                    Based on the keywords in your request.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  {requestDocumentSuggestions.map((document) => (
+                    <div
+                      key={`request-suggestion-${document.id}`}
+                      className="rounded-lg border bg-background p-3 space-y-2"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="ds-label truncate">{document.projectTitle}</p>
+                          <p className="ds-caption mt-1 text-muted-foreground">
+                            {document.ownerName}
+                          </p>
+                        </div>
+                        <Badge
+                          className={`border-0 ${
+                            document.visibility === "peer"
+                              ? "bg-blue-100 text-blue-800"
+                              : document.visibility === "mine"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : "bg-secondary text-foreground"
+                          }`}
+                        >
+                          {document.visibility === "peer"
+                            ? "Peer"
+                            : document.visibility === "mine"
+                              ? "My doc"
+                              : "Student"}
+                        </Badge>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {document.matchedTokens.slice(0, 4).map((token) => (
+                          <Badge key={`${document.id}-${token}`} variant="secondary" className="ds-badge">
+                            {token}
+                          </Badge>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="ds-caption text-muted-foreground">
+                          {formatFileSize(document.size)}
+                        </p>
+                        <Button
+                          type="button"
+                          variant={selectedDocumentIdsForActiveRequest.has(document.id) ? "secondary" : "outline"}
+                          size="sm"
+                          onClick={() => handleSelectSuggestedDocument(document)}
+                          disabled={selectedDocumentIdsForActiveRequest.has(document.id)}
+                        >
+                          <FileText className="h-4 w-4" />
+                          {selectedDocumentIdsForActiveRequest.has(document.id) ? "Added" : "Select"}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -746,6 +965,19 @@ export default function StudentSharedDocuments() {
                       </Badge>
                     </div>
 
+                    {request.visibility === "mine" ? (
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteRequest(request.id)}
+                        >
+                          Remove request
+                        </Button>
+                      </div>
+                    ) : null}
+
                     {request.theme && (
                       <p className="ds-small text-muted-foreground">
                         Theme: <span className="text-foreground">{request.theme}</span>
@@ -765,6 +997,23 @@ export default function StudentSharedDocuments() {
                         ))}
                       </div>
                     )}
+
+                    {request.matched_documents && request.matched_documents.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="ds-small text-muted-foreground">Selected documents</p>
+                        {request.matched_documents.map((document) => (
+                          <div
+                            key={`${request.id}-${document.document_id}`}
+                            className="rounded-lg border bg-secondary/20 p-3"
+                          >
+                            <p className="ds-label">{document.project_title}</p>
+                            <p className="ds-caption mt-1 text-muted-foreground">
+                              {document.owner_name}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -882,18 +1131,26 @@ export default function StudentSharedDocuments() {
         </CardContent>
       </Card>
 
-      {sharedDocuments.length === 0 ? (
+      {currentStudentDocuments.length === 0 ? (
         <Card className="border shadow-none">
           <CardContent className="pt-6 text-center">
             <FileText className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
             <p className="ds-body text-muted-foreground">
-              No shared documents match your search yet.
+              No documents uploaded for your projects yet.
             </p>
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {sharedDocuments.map((document) => (
+        <div className="space-y-4">
+          <div>
+            <h2 className="ds-title-sm tracking-tight">My documents</h2>
+            <p className="ds-body text-muted-foreground mt-1">
+              Documents attached to your own projects.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {currentStudentDocuments.map((document) => (
             <Card
               key={document.id}
               className="border shadow-none transition-shadow duration-300 hover:shadow-md"
@@ -901,31 +1158,14 @@ export default function StudentSharedDocuments() {
               <CardContent className="pt-6 space-y-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="ds-label truncate">{document.name}</p>
+                    <p className="ds-label truncate">{document.display_title || document.projectTitle}</p>
                     <p className="ds-caption mt-1 text-muted-foreground">
-                      Shared by {document.ownerName}
+                      {student ? `${student.first_name} ${student.last_name}` : "My document"}
                     </p>
                   </div>
-                  <Badge
-                    className={`border-0 ${
-                      document.visibility === "peer"
-                        ? "bg-blue-100 text-blue-800"
-                        : document.visibility === "mine"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-secondary text-foreground"
-                    }`}
-                  >
-                    {document.visibility === "peer"
-                      ? "Peer"
-                      : document.visibility === "mine"
-                        ? "My doc"
-                        : "Student"}
+                  <Badge className="border-0 bg-emerald-100 text-emerald-800">
+                    My doc
                   </Badge>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="ds-small text-muted-foreground">Project</p>
-                  <p className="ds-body">{document.projectTitle}</p>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
@@ -952,7 +1192,8 @@ export default function StudentSharedDocuments() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            ))}
+          </div>
         </div>
       )}
     </div>

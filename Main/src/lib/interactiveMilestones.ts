@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { mentorExamples } from "../../mock-data/mentors";
+import { seededProjectDocuments } from "../../mock-data/seedProjectDocuments";
 
 export const DEMO_STUDENT = "student-26";
 export const INTERACTIVE_MILESTONES_STORAGE_KEY = `studyond-interactive-milestones-${DEMO_STUDENT}`;
@@ -69,6 +70,7 @@ export type ProjectDocument = {
   id: string;
   project_id: string;
   name: string;
+  display_title?: string | null;
   type: string;
   size: number;
   dataUrl: string;
@@ -83,6 +85,11 @@ export type SharedDocumentRequest = {
   keywords: string[];
   description: string | null;
   created_at: string;
+  matched_documents?: Array<{
+    document_id: string;
+    owner_name: string;
+    project_title: string;
+  }>;
 };
 
 type WorkspaceState = {
@@ -90,6 +97,23 @@ type WorkspaceState = {
   projectDocuments: ProjectDocument[];
   sharedDocumentRequests: SharedDocumentRequest[];
 };
+
+function getAllProjectDocuments(workspaceState: WorkspaceState) {
+  const byId = new Map<string, ProjectDocument>();
+
+  for (const document of seededProjectDocuments) {
+    byId.set(document.id, { ...document });
+  }
+
+  for (const document of workspaceState.projectDocuments) {
+    byId.set(document.id, document);
+  }
+
+  return Array.from(byId.values()).sort(
+    (left, right) =>
+      new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+  );
+}
 
 type RemoteCache = {
   students: StudentRow[];
@@ -768,6 +792,7 @@ export function getInteractiveStudentWorkspace(studentId = DEMO_STUDENT) {
   const universities = [...getRemoteCache().universities];
 
   const workspaceState = loadInteractiveWorkspaceState();
+  const projectDocuments = getAllProjectDocuments(workspaceState);
 
   return {
     students,
@@ -785,7 +810,7 @@ export function getInteractiveStudentWorkspace(studentId = DEMO_STUDENT) {
     universities,
     feedbacks,
     studentFeedbacks: feedbacks.filter((item) => item.student_id === preferredStudentId),
-    projectDocuments: workspaceState.projectDocuments.filter((item) =>
+    projectDocuments: projectDocuments.filter((item) =>
       projects.some((project) => project.student_id === preferredStudentId && project.id === item.project_id),
     ),
     peerConnections: peerConnections.filter(
@@ -799,14 +824,15 @@ export function getInteractiveStudentWorkspace(studentId = DEMO_STUDENT) {
 export function getInteractiveProjectDocuments(studentId?: string) {
   ensureRemoteDataLoaded();
   const workspaceState = loadInteractiveWorkspaceState();
+  const projectDocuments = getAllProjectDocuments(workspaceState);
   if (!studentId) {
-    return [...workspaceState.projectDocuments];
+    return projectDocuments;
   }
 
   const preferredStudentId = getPreferredStudentId(studentId);
   const projects = getInteractiveThesisProjects();
 
-  return workspaceState.projectDocuments.filter((item) =>
+  return projectDocuments.filter((item) =>
     projects.some((project) => project.student_id === preferredStudentId && project.id === item.project_id),
   );
 }
@@ -827,6 +853,34 @@ export function addInteractiveSharedDocumentRequest(request: SharedDocumentReque
   saveInteractiveWorkspaceState({
     ...workspaceState,
     sharedDocumentRequests: [request, ...workspaceState.sharedDocumentRequests],
+  });
+}
+
+export function upsertInteractiveSharedDocumentRequest(request: SharedDocumentRequest) {
+  const workspaceState = loadInteractiveWorkspaceState();
+  const existingIndex = workspaceState.sharedDocumentRequests.findIndex((item) => item.id === request.id);
+
+  if (existingIndex === -1) {
+    saveInteractiveWorkspaceState({
+      ...workspaceState,
+      sharedDocumentRequests: [request, ...workspaceState.sharedDocumentRequests],
+    });
+    return;
+  }
+
+  const nextRequests = [...workspaceState.sharedDocumentRequests];
+  nextRequests[existingIndex] = request;
+  saveInteractiveWorkspaceState({
+    ...workspaceState,
+    sharedDocumentRequests: nextRequests,
+  });
+}
+
+export function deleteInteractiveSharedDocumentRequest(requestId: string) {
+  const workspaceState = loadInteractiveWorkspaceState();
+  saveInteractiveWorkspaceState({
+    ...workspaceState,
+    sharedDocumentRequests: workspaceState.sharedDocumentRequests.filter((item) => item.id !== requestId),
   });
 }
 
