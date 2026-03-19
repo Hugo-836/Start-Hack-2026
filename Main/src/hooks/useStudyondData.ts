@@ -22,7 +22,7 @@ type ThesisSimilarityResult = Record<
 >;
 
 type ThesisSimilarityDebug = {
-  source: "ollama-local" | "none";
+  source: "claude-local" | "none";
   localApiStatus: number | null;
   localApiError: string | null;
   candidateCount: number;
@@ -307,7 +307,7 @@ export function usePeerThesisSimilarity(
           return {
             ...result,
             __debug: {
-              source: "ollama-local",
+              source: "claude-local",
               localApiStatus,
               localApiError: null,
               candidateCount: candidateProjects.length,

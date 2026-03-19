@@ -1,3 +1,5 @@
+import { generateJsonWithClaude, parseClaudeJson } from "./claude";
+
 type StudentProfile = {
   id: string;
   first_name: string;
@@ -33,15 +35,11 @@ type MentorIntroEmailRequest = {
   mentorMatchReason?: string | null;
 };
 
-type OllamaGenerateResponse = {
-  response?: string;
-};
-
 export async function generateMentorIntroEmail(
   payload: MentorIntroEmailRequest,
-  options?: { ollamaModel?: string },
+  options?: { anthropicApiKey?: string; claudeModel?: string },
 ) {
-  const model = options?.ollamaModel || "qwen2.5:3b";
+  const model = options?.claudeModel || "claude-3-5-sonnet-latest";
   const prompt = JSON.stringify({
     instructions: [
       "Write a concise outreach email from the student to the mentor.",
@@ -52,25 +50,12 @@ export async function generateMentorIntroEmail(
     data: payload,
   });
 
-  const response = await fetch("http://127.0.0.1:11434/api/generate", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      stream: false,
-      format: "json",
-      prompt,
-    }),
+  const raw = await generateJsonWithClaude(prompt, {
+    apiKey: options?.anthropicApiKey,
+    model,
+    maxTokens: 700,
   });
-
-  if (!response.ok) {
-    throw new Error(`Ollama mentor email generation failed with status ${response.status}`);
-  }
-
-  const data = (await response.json()) as OllamaGenerateResponse;
-  const parsed = JSON.parse(data.response || "{}");
+  const parsed = parseClaudeJson<{ subject?: string; body?: string }>(raw);
 
   return {
     subject:

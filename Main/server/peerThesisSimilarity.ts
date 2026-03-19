@@ -1,3 +1,5 @@
+import { generateJsonWithClaude, parseClaudeJson } from "./claude";
+
 export type ThesisInput = {
   title: string;
   description?: string | null;
@@ -31,10 +33,6 @@ export type ThesisSimilarityMatch = {
   studentId: string;
   score: number;
   reason: string;
-};
-
-type OllamaGenerateResponse = {
-  response?: string;
 };
 
 function buildPrompt(body: PeerThesisSimilarityRequest) {
@@ -77,22 +75,12 @@ function buildSingleCandidatePrompt(
 
 function parseMatches(rawText: string): ThesisSimilarityMatch[] {
   if (!rawText.trim()) return [];
-
-  const candidates = [rawText, rawText.match(/```json\s*([\s\S]*?)```/i)?.[1] || ""];
-
-  for (const candidate of candidates) {
-    if (!candidate.trim()) continue;
-    try {
-      const parsed = JSON.parse(candidate);
-      if (Array.isArray(parsed?.matches)) {
-        return parsed.matches;
-      }
-    } catch {
-      continue;
-    }
+  try {
+    const parsed = parseClaudeJson<{ matches?: ThesisSimilarityMatch[] }>(rawText);
+    return Array.isArray(parsed?.matches) ? parsed.matches : [];
+  } catch {
+    return [];
   }
-
-  return [];
 }
 
 function normalizeMatches(
@@ -121,104 +109,95 @@ function normalizeMatches(
     .map((candidate) => byStudentId.get(candidate.studentId) as ThesisSimilarityMatch);
 }
 
-async function requestMatchesFromOllama(
+async function requestMatchesFromClaude(
   body: PeerThesisSimilarityRequest,
   model: string,
+  apiKey: string,
 ): Promise<ThesisSimilarityMatch[]> {
-  let response: Response;
   try {
-    response = await fetch("http://127.0.0.1:11434/api/generate", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    const rawText = await generateJsonWithClaude(
+      "You score thesis similarity for academic peer matching.\n" +
+        "Compare the current student's thesis against each candidate thesis.\n" +
+        "Return exactly one result for every candidate studentId. Never omit a candidate.\n" +
+        "Use a score from 0 to 100 where 100 means extremely strong thesis overlap.\n" +
+        "Use thesis title, description, motivation, academic context, and the current student's profile as support.\n" +
+        "Be strict: only give 80+ for genuinely close thesis overlap.\n" +
+        "Keep reasons short and concrete.\n" +
+        "Return valid JSON only with the shape {\"matches\":[{\"studentId\":\"...\",\"score\":0,\"reason\":\"...\"}]}.\n\n" +
+        buildPrompt(body),
+      {
+        apiKey,
         model,
-        stream: false,
-        format: "json",
-        prompt:
-          "You score thesis similarity for academic peer matching.\n" +
-          "Compare the current student's thesis against each candidate thesis.\n" +
-          "Return exactly one result for every candidate studentId. Never omit a candidate.\n" +
-          "Use a score from 0 to 100 where 100 means extremely strong thesis overlap.\n" +
-          "Use thesis title, description, motivation, academic context, and the current student's profile as support.\n" +
-          "Be strict: only give 80+ for genuinely close thesis overlap.\n" +
-          "Keep reasons short and concrete.\n" +
-          "Return valid JSON only with the shape {\"matches\":[{\"studentId\":\"...\",\"score\":0,\"reason\":\"...\"}]}.\n\n" +
-          buildPrompt(body),
-      }),
-    });
+        maxTokens: 1600,
+      },
+    );
+
+    return normalizeMatches(parseMatches(rawText), body.candidates);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown fetch error";
-    throw new Error(`Ollama connection failed: ${message}`);
+    throw new Error(`Claude request failed: ${message}`);
   }
-
-  if (!response.ok) {
-    throw new Error(`Ollama request failed with status ${response.status}`);
-  }
-
-  const payload = (await response.json()) as OllamaGenerateResponse;
-  return normalizeMatches(parseMatches(payload.response || ""), body.candidates);
 }
 
-async function requestSingleMatchFromOllama(
+async function requestSingleMatchFromClaude(
   body: PeerThesisSimilarityRequest,
   candidate: CandidateInput,
   model: string,
+  apiKey: string,
 ): Promise<ThesisSimilarityMatch | null> {
-  let response: Response;
   try {
-    response = await fetch("http://127.0.0.1:11434/api/generate", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    const rawText = await generateJsonWithClaude(
+      "You score thesis similarity for academic peer matching.\n" +
+        "Compare the current student's thesis against exactly one candidate thesis.\n" +
+        `Return exactly one result for studentId ${candidate.studentId}.\n` +
+        "Use a score from 0 to 100 where 100 means extremely strong thesis overlap.\n" +
+        "Use thesis title, description, motivation, academic context, and the current student's profile as support.\n" +
+        "Be strict: only give 80+ for genuinely close thesis overlap.\n" +
+        "Keep reasons short and concrete.\n" +
+        "Return valid JSON only with the shape " +
+        `{"matches":[{"studentId":"${candidate.studentId}","score":0,"reason":"..."}]}.\n\n` +
+        buildSingleCandidatePrompt(body, candidate),
+      {
+        apiKey,
         model,
-        stream: false,
-        format: "json",
-        prompt:
-          "You score thesis similarity for academic peer matching.\n" +
-          "Compare the current student's thesis against exactly one candidate thesis.\n" +
-          `Return exactly one result for studentId ${candidate.studentId}.\n` +
-          "Use a score from 0 to 100 where 100 means extremely strong thesis overlap.\n" +
-          "Use thesis title, description, motivation, academic context, and the current student's profile as support.\n" +
-          "Be strict: only give 80+ for genuinely close thesis overlap.\n" +
-          "Keep reasons short and concrete.\n" +
-          "Return valid JSON only with the shape " +
-          `{"matches":[{"studentId":"${candidate.studentId}","score":0,"reason":"..."}]}.\n\n` +
-          buildSingleCandidatePrompt(body, candidate),
-      }),
-    });
+        maxTokens: 500,
+      },
+    );
+
+    const matches = normalizeMatches(parseMatches(rawText), [candidate]);
+    return matches[0] || null;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown fetch error";
-    throw new Error(`Ollama connection failed: ${message}`);
+    throw new Error(`Claude request failed: ${message}`);
   }
-
-  if (!response.ok) {
-    throw new Error(`Ollama request failed with status ${response.status}`);
-  }
-
-  const payload = (await response.json()) as OllamaGenerateResponse;
-  const matches = normalizeMatches(parseMatches(payload.response || ""), [candidate]);
-  return matches[0] || null;
 }
 
 export async function scorePeerThesisSimilarity(
   body: PeerThesisSimilarityRequest,
   options?: {
-    ollamaModel?: string;
+    anthropicApiKey?: string;
+    claudeModel?: string;
   },
 ): Promise<ThesisSimilarityMatch[]> {
-  const ollamaModel = options?.ollamaModel || "qwen2.5:7b";
+  const claudeModel = options?.claudeModel || "claude-3-5-sonnet-latest";
+  const anthropicApiKey = options?.anthropicApiKey;
 
-  let matches = await requestMatchesFromOllama(body, ollamaModel);
+  if (!anthropicApiKey) {
+    throw new Error("Missing ANTHROPIC_API_KEY in Main/.env");
+  }
+
+  let matches = await requestMatchesFromClaude(body, claudeModel, anthropicApiKey);
 
   if (matches.length < body.candidates.length) {
     const completeMatches: ThesisSimilarityMatch[] = [];
 
     for (const candidate of body.candidates) {
-      const singleMatch = await requestSingleMatchFromOllama(body, candidate, ollamaModel);
+      const singleMatch = await requestSingleMatchFromClaude(
+        body,
+        candidate,
+        claudeModel,
+        anthropicApiKey,
+      );
       if (singleMatch) {
         completeMatches.push(singleMatch);
       }
