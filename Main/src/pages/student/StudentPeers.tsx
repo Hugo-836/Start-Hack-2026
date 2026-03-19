@@ -58,11 +58,13 @@ export default function StudentPeers() {
   const [selectedMentorId, setSelectedMentorId] = useState<string | null>(null);
   const [mentorEmailDraft, setMentorEmailDraft] = useState<{ subject: string; body: string } | null>(null);
   const [isGeneratingMentorEmail, setIsGeneratingMentorEmail] = useState(false);
+
   const { data: connections, isLoading } = usePeerConnections(DEMO_STUDENT);
   const { data: students } = useStudents();
   const { data: projects } = useThesisProjects();
   const { data: fields } = useFields();
   const { data: mentors } = useMockMentors();
+
   const {
     data: thesisSimilarityByStudentId,
     isLoading: isThesisSimilarityLoading,
@@ -70,6 +72,7 @@ export default function StudentPeers() {
     error: thesisSimilarityError,
     status: thesisSimilarityStatus,
   } = usePeerThesisSimilarity(DEMO_STUDENT, students, projects);
+
   const { data: mentorMatchesById, isLoading: isMentorMatchesLoading } = useMentorMatches(
     DEMO_STUDENT,
     students,
@@ -77,11 +80,25 @@ export default function StudentPeers() {
     mentors,
   );
 
+  type SimilarityEntry = {
+    score?: number | null;
+    reason?: string | null;
+  };
+
+  type SimilarityMap = Record<string, SimilarityEntry> & {
+    __debug?: unknown;
+  };
+
+  const similarityMap: SimilarityMap = (thesisSimilarityByStudentId ?? {}) as SimilarityMap;
+
   const getStudent = (id: string) => students?.find((s: any) => s.id === id);
+
   const getPeer = (conn: any) =>
     getStudent(conn.student_a_id === DEMO_STUDENT ? conn.student_b_id : conn.student_a_id);
+
   const currentStudent = getStudent(DEMO_STUDENT);
   const currentProject = projects ? getPrimaryProject(projects, DEMO_STUDENT) : null;
+
   const mentorSuggestions = (mentors || [])
     .map((mentor) => ({
       mentor,
@@ -92,19 +109,33 @@ export default function StudentPeers() {
     .slice(0, 3);
 
   const suggestions =
-    students && projects
+    students && projects && fields
       ? buildPeerSuggestions({
           currentStudentId: DEMO_STUDENT,
           students,
           projects,
           fields,
-          thesisSimilarityByStudentId,
+          thesisSimilarityByStudentId: similarityMap,
         })
       : [];
-  const thesisSimilarityDebug = thesisSimilarityByStudentId?.__debug ?? null;
-  const ollamaScores = Object.entries(thesisSimilarityByStudentId ?? {}).filter(
-    ([studentId, value]) => studentId !== "__debug" && typeof value?.score === "number",
+
+  const thesisSimilarityDebug = similarityMap.__debug ?? null;
+
+  const ollamaScores = Object.entries(similarityMap).filter(
+    (entry): entry is [string, SimilarityEntry] => {
+      const [studentId, value] = entry;
+      return studentId !== "__debug" && typeof value?.score === "number";
+    },
   );
+
+  const ollamaScoresByStudentId = ollamaScores.reduce<Record<string, SimilarityEntry>>(
+    (acc, [studentId, value]) => {
+      acc[studentId] = value;
+      return acc;
+    },
+    {},
+  );
+
   const debugPayload = {
     thesisSimilarityQuery: {
       status: thesisSimilarityStatus,
@@ -116,16 +147,14 @@ export default function StudentPeers() {
           : thesisSimilarityError ?? null,
       hasData: thesisSimilarityByStudentId !== undefined,
     },
-    hasPositiveOllamaScores: ollamaScores.some(([, value]) => value.score > 0),
+    hasPositiveOllamaScores: ollamaScores.some(([, value]) => (value.score ?? 0) > 0),
     thesisSimilarityDebug,
-    ollamaScoresByStudentId: Object.fromEntries(ollamaScores),
+    ollamaScoresByStudentId,
     topRecommendations: suggestions.slice(0, 3).map((suggestion) => ({
       studentId: suggestion.student.id,
       studentName: `${suggestion.student.first_name} ${suggestion.student.last_name}`,
-      ollamaRawScore: formatPercent(
-        thesisSimilarityByStudentId?.[suggestion.student.id]?.score ?? null,
-      ),
-      ollamaReason: thesisSimilarityByStudentId?.[suggestion.student.id]?.reason ?? null,
+      ollamaRawScore: formatPercent(similarityMap[suggestion.student.id]?.score ?? null),
+      ollamaReason: similarityMap[suggestion.student.id]?.reason ?? null,
       rankingThesisScore: formatPercent(suggestion.thesisSimilarityScore),
       finalMatchScore: formatPercent(suggestion.score),
     })),
@@ -133,6 +162,7 @@ export default function StudentPeers() {
 
   const isPageLoading =
     isLoading || !students || !projects || !fields || isThesisSimilarityLoading;
+
   const selectedSuggestion =
     suggestions.find((suggestion) => suggestion.student.id === selectedPeerId) || null;
 
@@ -164,8 +194,8 @@ export default function StudentPeers() {
                 motivation: peerProject.motivation,
               }
             : null,
-          thesisSimilarityScore: thesisSimilarityByStudentId?.[peerId]?.score ?? null,
-          thesisSimilarityReason: thesisSimilarityByStudentId?.[peerId]?.reason ?? null,
+          thesisSimilarityScore: similarityMap[peerId]?.score ?? null,
+          thesisSimilarityReason: similarityMap[peerId]?.reason ?? null,
         }),
       });
 
@@ -185,7 +215,6 @@ export default function StudentPeers() {
       setIsGeneratingEmail(false);
     }
   };
-
   const closeEmailDialog = () => {
     setSelectedPeerId(null);
     setEmailDraft(null);

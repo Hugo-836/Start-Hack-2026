@@ -1,72 +1,383 @@
-import { useThesisProjects, useStudents, useProgressMilestones } from "@/hooks/useStudyondData";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { BookOpen, Clock, Milestone, Sparkles, ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { DEMO_STUDENT, getInteractiveMilestoneCount, INTERACTIVE_MILESTONES_EVENT } from "@/lib/interactiveMilestones";
+import {
+  useProgressMilestones,
+  useStudents,
+  useSupervisors,
+  useThesisProjects,
+} from "@/hooks/useStudyondData";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ArrowRight, BookOpen, Sparkles } from "lucide-react";
+import {
+  DEMO_STUDENT,
+  INTERACTIVE_MILESTONES_EVENT,
+  loadInteractiveMilestones,
+  phases,
+} from "@/lib/interactiveMilestones";
 
 const stateLabels: Record<string, string> = {
-  proposed: "Proposed", applied: "Applied", withdrawn: "Withdrawn", rejected: "Rejected",
-  agreed: "Agreed", in_progress: "In Progress", canceled: "Canceled", completed: "Completed",
+  proposed: "Proposed",
+  applied: "Applied",
+  withdrawn: "Withdrawn",
+  rejected: "Rejected",
+  agreed: "Agreed",
+  in_progress: "In Progress",
+  canceled: "Canceled",
+  completed: "Completed",
 };
+
 const stateColors: Record<string, string> = {
-  proposed: "bg-muted text-muted-foreground", applied: "bg-blue-100 text-blue-800",
-  agreed: "bg-green-100 text-green-800", in_progress: "bg-purple-100 text-purple-800",
-  completed: "bg-emerald-100 text-emerald-800", rejected: "bg-red-100 text-red-800",
-  withdrawn: "bg-muted text-muted-foreground", canceled: "bg-muted text-muted-foreground",
+  proposed: "bg-muted text-muted-foreground",
+  applied: "bg-blue-100 text-blue-800",
+  agreed: "bg-green-100 text-green-800",
+  in_progress: "bg-purple-100 text-purple-800",
+  completed: "bg-emerald-100 text-emerald-800",
+  rejected: "bg-red-100 text-red-800",
+  withdrawn: "bg-muted text-muted-foreground",
+  canceled: "bg-muted text-muted-foreground",
+};
+
+const milestoneStatusLabels: Record<string, string> = {
+  upcoming: "Upcoming",
+  in_progress: "In Progress",
+  completed: "Completed",
+  overdue: "Overdue",
 };
 
 export default function StudentDashboard() {
   const { data: projects } = useThesisProjects();
   const { data: students } = useStudents();
+  const { data: supervisors } = useSupervisors();
   const { data: milestones } = useProgressMilestones(DEMO_STUDENT);
-  const [milestoneCount, setMilestoneCount] = useState(0);
+
+  const [phaseState, setPhaseState] = useState<any[]>(() =>
+    loadInteractiveMilestones(undefined),
+  );
 
   const student = students?.find((s: any) => s.id === DEMO_STUDENT);
-  const studentProjects = projects?.filter((p: any) => p.student_id === DEMO_STUDENT) || [];
-  const activeProject = studentProjects.find((p: any) => p.state === "in_progress" || p.state === "agreed") || studentProjects[0];
+  const studentProjects =
+    projects?.filter((p: any) => p.student_id === DEMO_STUDENT) || [];
+
+  const activeProject =
+    studentProjects.find(
+      (p: any) => p.state === "in_progress" || p.state === "agreed",
+    ) || studentProjects[0];
+
+  const assignedSupervisor = supervisors?.find((s: any) =>
+    activeProject?.supervisor_ids?.includes(s.id),
+  );
 
   useEffect(() => {
-    setMilestoneCount(getInteractiveMilestoneCount(milestones));
+    setPhaseState(loadInteractiveMilestones(milestones));
   }, [milestones]);
 
   useEffect(() => {
-    const syncMilestones = () => setMilestoneCount(getInteractiveMilestoneCount(milestones));
+    const syncDashboardProgress = () => {
+      setPhaseState(loadInteractiveMilestones(milestones));
+    };
 
-    window.addEventListener(INTERACTIVE_MILESTONES_EVENT, syncMilestones);
-    window.addEventListener("focus", syncMilestones);
+    window.addEventListener(INTERACTIVE_MILESTONES_EVENT, syncDashboardProgress);
+    window.addEventListener("focus", syncDashboardProgress);
 
     return () => {
-      window.removeEventListener(INTERACTIVE_MILESTONES_EVENT, syncMilestones);
-      window.removeEventListener("focus", syncMilestones);
+      window.removeEventListener(
+        INTERACTIVE_MILESTONES_EVENT,
+        syncDashboardProgress,
+      );
+      window.removeEventListener("focus", syncDashboardProgress);
     };
   }, [milestones]);
 
+  const totalMilestones = phaseState.reduce(
+    (total, phase) => total + phase.milestones.length,
+    0,
+  );
+
+  const completedMilestones = phaseState.reduce(
+    (total, phase) =>
+      total +
+      phase.milestones.filter(
+        (milestone: any) => milestone.status === "completed",
+      ).length,
+    0,
+  );
+
+  const completionPercentage =
+    totalMilestones > 0
+      ? Math.round((completedMilestones / totalMilestones) * 100)
+      : 0;
+
+  const completedPhaseKeys = new Set(
+    phaseState
+      .filter(
+        (phase) =>
+          phase.milestones.length > 0 &&
+          phase.milestones.every(
+            (milestone: any) => milestone.status === "completed",
+          ),
+      )
+      .map((phase) => phase.key),
+  );
+
+  const currentPhaseKey =
+    phaseState.find((phase) =>
+      phase.milestones.some((milestone: any) => milestone.status === "in_progress"),
+    )?.key ||
+    phaseState.find((phase) =>
+      phase.milestones.some((milestone: any) => milestone.status !== "completed"),
+    )?.key ||
+    phases[0]?.key;
+
+  const pendingMilestones = phaseState.flatMap((phase) =>
+    phase.milestones
+      .filter((milestone: any) => milestone.status !== "completed")
+      .map((milestone: any) => ({
+        ...milestone,
+        phaseKey: phase.key,
+        phaseLabel: phase.label,
+      })),
+  );
+
+  const nextMilestone =
+    pendingMilestones.find((milestone: any) => milestone.status === "in_progress") ||
+    pendingMilestones.find((milestone: any) => milestone.status === "overdue") ||
+    pendingMilestones.find((milestone: any) => milestone.status === "upcoming") ||
+    null;
+
+  const aiSuggestionText =
+    totalMilestones === 0
+      ? "You don't have any milestones yet. Create a progress plan to structure your thesis journey."
+      : nextMilestone
+        ? `Your next focus should be "${nextMilestone.title}". Keep your milestone page updated so your dashboard stays in sync.`
+        : "All current milestones are completed. You can add new ones to keep structuring the next phase of your thesis.";
+
   return (
-    <div className="space-y-8 max-w-5xl">
+    <div className="space-y-8 max-w-6xl">
       <div>
-        <h1 className="ds-title-lg tracking-tight">Hello, {student?.first_name || "Student"} 👋</h1>
-        <p className="ds-body text-muted-foreground mt-1">Here's an overview of your thesis journey.</p>
+        <h1 className="ds-title-lg tracking-tight">
+          Hello, {student?.first_name || "Student"}
+        </h1>
+        <p className="ds-body text-muted-foreground mt-1">
+          Here's an overview of your thesis journey.
+        </p>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="border shadow-none hover:shadow-md transition-shadow duration-300"><CardContent className="pt-6"><div className="flex items-center gap-3"><div className="rounded-full bg-secondary p-2"><BookOpen className="h-4 w-4 text-foreground" /></div><div><p className="ds-caption text-muted-foreground">Projects</p><p className="ds-title-cards">{studentProjects.length}</p></div></div></CardContent></Card>
-        <Card className="border shadow-none hover:shadow-md transition-shadow duration-300"><CardContent className="pt-6"><div className="flex items-center gap-3"><div className="rounded-full bg-secondary p-2"><Milestone className="h-4 w-4 text-foreground" /></div><div><p className="ds-caption text-muted-foreground">Completed Milestones</p><p className="ds-title-cards">{milestoneCount}</p></div></div></CardContent></Card>
-        <Card className="border shadow-none hover:shadow-md transition-shadow duration-300"><CardContent className="pt-6"><div className="flex items-center gap-3"><div className="rounded-full bg-secondary p-2"><Clock className="h-4 w-4 text-foreground" /></div><div><p className="ds-caption text-muted-foreground">Phase</p><p className="ds-title-cards capitalize">{activeProject?.state ? stateLabels[activeProject.state] : "—"}</p></div></div></CardContent></Card>
+
+      <Card className="border shadow-none">
+        <CardContent className="pt-8 space-y-6">
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="ds-title-sm">Overall Progress</h2>
+            <p className="ds-title-cards">{completionPercentage}%</p>
+          </div>
+
+          <div className="h-3 w-full rounded-full bg-secondary overflow-hidden">
+            <div
+              className="h-full bg-foreground transition-all duration-300"
+              style={{ width: `${completionPercentage}%` }}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            {phases.map((phase) => {
+              const phaseData = phaseState.find((item) => item.key === phase.key);
+
+              const isCompleted =
+                phaseData?.milestones?.length > 0 &&
+                phaseData.milestones.every(
+                  (milestone: any) => milestone.status === "completed",
+                );
+
+              const hasStarted = phaseData?.milestones?.some(
+                (milestone: any) =>
+                  milestone.status === "in_progress" ||
+                  milestone.status === "completed",
+              );
+
+              const isCurrent = currentPhaseKey === phase.key;
+
+              return (
+                <div key={phase.key} className="space-y-3">
+                  <div
+                    className={`h-2 w-full rounded-full transition-colors ${
+                      isCompleted || isCurrent || hasStarted
+                        ? "bg-foreground"
+                        : "bg-secondary"
+                    }`}
+                  />
+                  <p
+                    className={`ds-body ${
+                      isCompleted || isCurrent || hasStarted
+                        ? "text-foreground"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {phase.label}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border shadow-none">
+  <CardContent className="pt-6">
+    {activeProject ? (
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-start gap-3">
+            <BookOpen className="h-5 w-5 text-muted-foreground shrink-0 mt-1" />
+            <div className="min-w-0">
+              <p className="ds-label text-muted-foreground mb-2">Thesis Theme</p>
+              <p className="ds-title-sm leading-tight">{activeProject.title}</p>
+
+              {(activeProject.description || activeProject.motivation) && (
+                <p className="ds-body text-muted-foreground mt-3">
+                  {activeProject.description ||
+                    activeProject.motivation}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <Badge className={`${stateColors[activeProject.state]} border-0 shrink-0`}>
+          {stateLabels[activeProject.state]}
+        </Badge>
       </div>
-      {activeProject && (
-        <Card className="border shadow-none">
-          <CardHeader className="flex-row items-start justify-between space-y-0">
-            <div className="space-y-1"><CardTitle className="ds-title-sm">{activeProject.title}</CardTitle><p className="ds-small text-muted-foreground">{activeProject.description || activeProject.motivation || "No description"}</p></div>
-            <Badge className={`${stateColors[activeProject.state]} border-0`}>{stateLabels[activeProject.state]}</Badge>
-          </CardHeader>
-          <CardContent><div className="flex flex-wrap gap-4 text-sm">{activeProject.supervisor_ids?.length > 0 && <span className="text-muted-foreground">{activeProject.supervisor_ids.length} supervisor(s)</span>}{activeProject.expert_ids?.length > 0 && <span className="text-muted-foreground">{activeProject.expert_ids.length} expert(s)</span>}</div></CardContent>
+    ) : (
+      <div>
+        <p className="ds-label text-muted-foreground mb-2">Thesis Theme</p>
+        <p className="ds-title-sm">You do not have a thesis for now</p>
+      </div>
+    )}
+  </CardContent>
+</Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="border shadow-none h-full">
+          <CardContent className="pt-6">
+            <h3 className="ds-title-sm">Next Steps</h3>
+
+            {nextMilestone ? (
+              <div className="mt-6 space-y-3">
+                <p className="ds-title-cards">{nextMilestone.title}</p>
+
+                {nextMilestone.description && (
+                  <p className="ds-small text-muted-foreground">
+                    {nextMilestone.description}
+                  </p>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="secondary" className="border-0">
+                    {nextMilestone.phaseLabel}
+                  </Badge>
+                  <Badge className="bg-muted text-muted-foreground border-0">
+                    {milestoneStatusLabels[nextMilestone.status] || nextMilestone.status}
+                  </Badge>
+                </div>
+              </div>
+            ) : (
+              <p className="ds-body text-muted-foreground mt-6">
+                No upcoming milestones.
+              </p>
+            )}
+
+            <Link
+              to="/student/milestones"
+              className="inline-flex items-center gap-1 mt-8 ds-label text-foreground hover:underline"
+            >
+              View all milestones <ArrowRight className="h-3 w-3" />
+            </Link>
+          </CardContent>
         </Card>
-      )}
-      <Card className="border border-ai shadow-none"><CardContent className="pt-6"><div className="flex items-start gap-3"><div className="rounded-full bg-ai p-2 shrink-0"><Sparkles className="h-4 w-4 text-white" /></div><div><p className="ds-label text-ai">AI Suggestion</p><p className="ds-small text-muted-foreground mt-1">You don't have any milestones yet. Create a progress plan to structure your thesis journey and receive automatic reminders.</p><Link to="/student/milestones" className="inline-flex items-center gap-1 mt-3 ds-label text-foreground hover:underline">Create milestones <ArrowRight className="h-3 w-3" /></Link></div></div></CardContent></Card>
+
+        <Card className="border shadow-none h-full">
+          <CardContent className="pt-6">
+            <h3 className="ds-title-sm">Your Supervisor</h3>
+
+            {assignedSupervisor ? (
+              <div className="mt-6 flex items-start gap-3">
+                <div className="h-10 w-10 rounded-full bg-secondary flex items-center justify-center ds-label shrink-0">
+                  {assignedSupervisor.first_name?.[0]}
+                  {assignedSupervisor.last_name?.[0]}
+                </div>
+
+                <div>
+                  <p className="ds-title-cards">
+                    {assignedSupervisor.title ? `${assignedSupervisor.title} ` : ""}
+                    {assignedSupervisor.first_name} {assignedSupervisor.last_name}
+                  </p>
+                  <p className="ds-small text-muted-foreground mt-1">
+                    {assignedSupervisor.email || "No email available"}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="ds-body text-muted-foreground mt-6">
+                No supervisor assigned yet.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="border shadow-none h-full">
+  <CardContent className="pt-6">
+    <h3 className="ds-title-sm">Your Supervisor</h3>
+
+    {assignedSupervisor ? (
+      <div className="mt-6 flex items-start gap-3">
+        <div className="h-10 w-10 rounded-full bg-secondary flex items-center justify-center ds-label shrink-0">
+          {assignedSupervisor.first_name?.[0]}
+          {assignedSupervisor.last_name?.[0]}
+        </div>
+
+        <div>
+          <p className="ds-title-cards">
+            {assignedSupervisor.title ? `${assignedSupervisor.title} ` : ""}
+            {assignedSupervisor.first_name} {assignedSupervisor.last_name}
+          </p>
+          <p className="ds-small text-muted-foreground mt-1">
+            {assignedSupervisor.email || "No email available"}
+          </p>
+        </div>
+      </div>
+    ) : (
+      <div className="mt-6">
+        <p className="ds-title-cards">You do not have a supervisor for now</p>
+      </div>
+    )}
+  </CardContent>
+</Card>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Link to="/student/feedback"><Card className="border shadow-none hover:shadow-md transition-shadow duration-300 cursor-pointer group"><CardContent className="pt-6"><p className="ds-title-cards group-hover:text-ai-solid transition-colors duration-200">Submit Feedback</p><p className="ds-small text-muted-foreground mt-1">Send your work to a supervisor for review.</p></CardContent></Card></Link>
-        <Link to="/student/peers"><Card className="border shadow-none hover:shadow-md transition-shadow duration-300 cursor-pointer group"><CardContent className="pt-6"><p className="ds-title-cards group-hover:text-ai-solid transition-colors duration-200">Find Peers</p><p className="ds-small text-muted-foreground mt-1">Connect with students working on similar topics.</p></CardContent></Card></Link>
+        <Link to="/student/feedback">
+          <Card className="border shadow-none hover:shadow-md transition-shadow duration-300 cursor-pointer group">
+            <CardContent className="pt-6">
+              <p className="ds-title-cards group-hover:text-ai-solid transition-colors duration-200">
+                Submit Feedback
+              </p>
+              <p className="ds-small text-muted-foreground mt-1">
+                Send your work to a supervisor for review.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link to="/student/peers">
+          <Card className="border shadow-none hover:shadow-md transition-shadow duration-300 cursor-pointer group">
+            <CardContent className="pt-6">
+              <p className="ds-title-cards group-hover:text-ai-solid transition-colors duration-200">
+                Find Peers
+              </p>
+              <p className="ds-small text-muted-foreground mt-1">
+                Connect with students working on similar topics.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
     </div>
   );

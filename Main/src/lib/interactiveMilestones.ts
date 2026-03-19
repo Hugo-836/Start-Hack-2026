@@ -1,4 +1,4 @@
-export const DEMO_STUDENT = "student-04";
+export const DEMO_STUDENT = "student-11";
 export const INTERACTIVE_MILESTONES_STORAGE_KEY = `studyond-interactive-milestones-${DEMO_STUDENT}`;
 export const INTERACTIVE_MILESTONES_EVENT = "studyond:interactive-milestones-updated";
 
