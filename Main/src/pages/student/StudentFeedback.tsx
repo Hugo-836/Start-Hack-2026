@@ -2,6 +2,7 @@ import { useFeedbackLoops, useSupervisors, useExperts } from "@/hooks/useStudyon
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { MessageSquare, Send, CheckCheck, RotateCcw } from "lucide-react";
+import { useState } from "react";
 
 const DEMO_STUDENT = "student-04";
 const statusConfig: Record<string, { icon: any; color: string; label: string; badgeClass: string }> = {
@@ -16,13 +17,50 @@ export default function StudentFeedback() {
   const { data: supervisors } = useSupervisors();
   const { data: experts } = useExperts();
   const getReviewer = (id: string, type: string) => type === "supervisor" ? supervisors?.find((s: any) => s.id === id) : experts?.find((e: any) => e.id === id);
+  const [localFeedbacks, setLocalFeedbacks] = useState<any[]>([]);
+  const allFeedbacks = [...(feedbacks || []), ...localFeedbacks];
+  const [text, setText] = useState("");
+  const handleSubmit = () => {
+    const newFeedback = {
+      id: Math.random(),
+      title: "New submission",
+      submission_text: text,
+      reviewer_feedback: "Good start, but improve structure.",
+      ai_summary: "Try to clarify your research question and structure.",
+      status: "reviewed",
+      reviewer_id: supervisors?.[0]?.id,
+      reviewer_type: "supervisor",
+    };
+  
+    setLocalFeedbacks([newFeedback, ...localFeedbacks]);
+    setText("");
+  };
 
   return (
     <div className="space-y-6 max-w-4xl">
       <div><h1 className="ds-title-lg tracking-tight">Feedback</h1><p className="ds-body text-muted-foreground mt-1">Submit your work and receive structured feedback.</p></div>
+      <Card className="border shadow-none">
+  <CardContent className="pt-6 space-y-3">
+    <p className="ds-title-cards">Submit your work</p>
+
+    <textarea
+      className="w-full border rounded p-2"
+      placeholder="Paste your thesis work here..."
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+    />
+
+    <button
+      className="bg-black text-white px-4 py-2 rounded"
+      onClick={handleSubmit}
+    >
+      Submit Feedback
+    </button>
+  </CardContent>
+</Card>
       {isLoading ? <p className="text-muted-foreground">Loading...</p> : !feedbacks?.length ? (
         <Card className="border shadow-none"><CardContent className="pt-6 text-center"><MessageSquare className="h-10 w-10 mx-auto text-muted-foreground mb-3" /><p className="ds-body text-muted-foreground">No feedback loops yet.</p><p className="ds-small text-muted-foreground mt-1">Submit your work to a supervisor or expert for structured feedback.</p></CardContent></Card>
-      ) : feedbacks.map((fb: any) => {
+      ) : allFeedbacks.map((fb: any) => {
         const config = statusConfig[fb.status] || statusConfig.pending; const Icon = config.icon; const reviewer = getReviewer(fb.reviewer_id, fb.reviewer_type);
         return (
           <Card key={fb.id} className="border shadow-none"><CardContent className="py-5 space-y-3">

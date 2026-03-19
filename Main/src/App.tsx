@@ -13,6 +13,7 @@ import StudentPeers from "./pages/student/StudentPeers";
 import MentorDashboard from "./pages/mentor/MentorDashboard";
 import MentorStudents from "./pages/mentor/MentorStudents";
 import MentorFeedback from "./pages/mentor/MentorFeedback";
+import StudentMentor from "./pages/student/StudentMentor";
 
 const queryClient = new QueryClient();
 
@@ -31,6 +32,7 @@ const App = () => (
             <Route path="/student/milestones" element={<StudentMilestones />} />
             <Route path="/student/feedback" element={<StudentFeedback />} />
             <Route path="/student/peers" element={<StudentPeers />} />
+            <Route path="/student/mentors" element={<StudentMentor />} />
           </Route>
 
           <Route element={<DashboardLayout />}>

@@ -11,7 +11,8 @@ const studentItems = [
   { title: "My Project", url: "/student/project", icon: BookOpen },
   { title: "Progress", url: "/student/milestones", icon: Milestone },
   { title: "Feedback", url: "/student/feedback", icon: MessageSquare },
-  { title: "Peers", url: "/student/peers", icon: Users },
+  { title: "Peers & Mentors", url: "/student/peers", icon: Users },
+  { title: "Mentors", url: "/student/mentors", icon: UserCheck },
 ];
 
 const mentorItems = [
