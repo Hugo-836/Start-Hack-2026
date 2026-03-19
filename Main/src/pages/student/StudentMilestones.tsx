@@ -268,10 +268,43 @@ function buildTaskChatIntro(milestone: MilestoneItem) {
 
   return `We’re working on "${milestone.title}". Tell me if you want the best first step, how to use your feedback, or how to turn your current documents into progress on this task.`;
 }
+function syncMilestonesWithProjectState(
+  phaseState: PhaseState[],
+  projectState?: string,
+): PhaseState[] {
+  if (!projectState) return phaseState;
 
+  const completedPhasesByState: Record<string, string[]> = {
+    proposed: [],
+    applied: [],
+    agreed: ["orientation"],
+    in_progress: ["orientation", "topic_search"],
+    completed: ["orientation", "topic_search", "planning", "execution", "writing"],
+    finish: ["orientation", "topic_search", "planning", "execution", "writing"],
+    withdrawn: [],
+    rejected: [],
+    canceled: [],
+  };
+
+  const phasesToComplete = completedPhasesByState[projectState] ?? [];
+
+  return phaseState.map((phase) => {
+    const shouldCompletePhase = phasesToComplete.includes(phase.key);
+
+    return {
+      ...phase,
+      milestones: phase.milestones.map((milestone) => ({
+        ...milestone,
+        status: shouldCompletePhase ? "completed" : "upcoming",
+      })),
+    };
+  });
+}
 export default function StudentMilestones() {
   const [searchParams] = useSearchParams();
-  const [phaseState, setPhaseState] = useState<PhaseState[]>(() => getInteractivePhaseState());
+  const [phaseState, setPhaseState] = useState<PhaseState[]>(() =>
+  syncMilestonesWithProjectState(getInteractivePhaseState()),
+);
   const [workspace, setWorkspace] = useState(() => getInteractiveStudentWorkspace(DEMO_STUDENT));
   const [selectedPhaseKey, setSelectedPhaseKey] = useState<string>(phases[0]?.key ?? "");
   const [hasAppliedPhaseFromUrl, setHasAppliedPhaseFromUrl] = useState(false);
@@ -298,6 +331,13 @@ export default function StudentMilestones() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const student = workspace.student;
   const studentProjects = workspace.studentProjects;
+  const activeProject =
+  studentProjects.find(
+    (project: any) =>
+      project.state === "in_progress" ||
+      project.state === "agreed" ||
+      project.state === "completed",
+  ) || studentProjects[0];
   const studentFeedbacks = workspace.studentFeedbacks;
   const connectedPeers = workspace.peerConnections
     .map((connection: any) =>
@@ -367,11 +407,34 @@ export default function StudentMilestones() {
 
     return selectableStatuses[currentIndex + 1];
   };
+  useEffect(() => {
+  const projectState = activeProject?.state;
+
+  if (!projectState) return;
+
+  setPhaseState((current) => {
+    const nextState = syncMilestonesWithProjectState(current, projectState);
+    saveInteractiveMilestones(nextState);
+    return nextState;
+  });
+}, [activeProject?.state]);
 
   useEffect(() => {
-    setPhaseState(getInteractivePhaseState());
-    setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
-  }, []);
+  const nextWorkspace = getInteractiveStudentWorkspace(DEMO_STUDENT);
+  setWorkspace(nextWorkspace);
+
+  const projectState =
+    nextWorkspace.studentProjects.find(
+      (project: any) =>
+        project.state === "in_progress" ||
+        project.state === "agreed" ||
+        project.state === "completed",
+    )?.state || nextWorkspace.studentProjects[0]?.state;
+
+  setPhaseState(
+    syncMilestonesWithProjectState(getInteractivePhaseState(), projectState),
+  );
+}, []);
 
   useEffect(() => {
     setQuote(inspirationalQuotes[Math.floor(Math.random() * inspirationalQuotes.length)]);

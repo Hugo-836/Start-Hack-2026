@@ -2,7 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { mentorExamples } from "../../mock-data/mentors";
 
-export const DEMO_STUDENT = "student-04";
+export const DEMO_STUDENT = "student-26";
 export const INTERACTIVE_MILESTONES_STORAGE_KEY = `studyond-interactive-milestones-${DEMO_STUDENT}`;
 export const INTERACTIVE_MILESTONES_EVENT = "studyond:interactive-milestones-updated";
 export const INTERACTIVE_WORKSPACE_STORAGE_KEY = `studyond-interactive-workspace-${DEMO_STUDENT}`;
