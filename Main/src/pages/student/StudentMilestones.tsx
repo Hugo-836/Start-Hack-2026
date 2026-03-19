@@ -30,7 +30,6 @@ import {
   addInteractiveCustomMilestone,
   attachInteractiveMilestoneFile,
   deleteInteractiveMilestone,
-  DEMO_STUDENT,
   getInteractivePhaseState,
   getInteractiveStudentWorkspace,
   INTERACTIVE_WORKSPACE_EVENT,
@@ -45,6 +44,7 @@ import {
   saveInteractiveMilestones,
   updateInteractiveMilestoneStatus,
 } from "@/lib/interactiveMilestones";
+import { useDemoAuth } from "@/lib/demoAuth";
 
 const statusConfig: Record<MilestoneStatus, { icon: typeof Circle; color: string; label: string }> = {
   upcoming: { icon: Circle, color: "text-muted-foreground", label: "Upcoming" },
@@ -301,11 +301,13 @@ function syncMilestonesWithProjectState(
   });
 }
 export default function StudentMilestones() {
+  const { session } = useDemoAuth();
+  const currentStudentId = session?.studentId;
   const [searchParams] = useSearchParams();
   const [phaseState, setPhaseState] = useState<PhaseState[]>(() =>
-  syncMilestonesWithProjectState(getInteractivePhaseState()),
+  syncMilestonesWithProjectState(getInteractivePhaseState(currentStudentId)),
 );
-  const [workspace, setWorkspace] = useState(() => getInteractiveStudentWorkspace(DEMO_STUDENT));
+  const [workspace, setWorkspace] = useState(() => getInteractiveStudentWorkspace(currentStudentId));
   const [selectedPhaseKey, setSelectedPhaseKey] = useState<string>(phases[0]?.key ?? "");
   const [hasAppliedPhaseFromUrl, setHasAppliedPhaseFromUrl] = useState(false);
   const [activeTab, setActiveTab] = useState<"tasks" | "create">("tasks");
@@ -342,7 +344,7 @@ export default function StudentMilestones() {
   const connectedPeers = workspace.peerConnections
     .map((connection: any) =>
       workspace.students.find((item: any) =>
-        item.id === (connection.student_a_id === DEMO_STUDENT ? connection.student_b_id : connection.student_a_id),
+        item.id === (connection.student_a_id === currentStudentId ? connection.student_b_id : connection.student_a_id),
       ),
     )
     .filter(Boolean);
@@ -414,13 +416,13 @@ export default function StudentMilestones() {
 
   setPhaseState((current) => {
     const nextState = syncMilestonesWithProjectState(current, projectState);
-    saveInteractiveMilestones(nextState);
+    saveInteractiveMilestones(nextState, currentStudentId);
     return nextState;
   });
-}, [activeProject?.state]);
+}, [activeProject?.state, currentStudentId]);
 
   useEffect(() => {
-  const nextWorkspace = getInteractiveStudentWorkspace(DEMO_STUDENT);
+  const nextWorkspace = getInteractiveStudentWorkspace(currentStudentId);
   setWorkspace(nextWorkspace);
 
   const projectState =
@@ -432,9 +434,9 @@ export default function StudentMilestones() {
     )?.state || nextWorkspace.studentProjects[0]?.state;
 
   setPhaseState(
-    syncMilestonesWithProjectState(getInteractivePhaseState(), projectState),
+    syncMilestonesWithProjectState(getInteractivePhaseState(currentStudentId), projectState),
   );
-}, []);
+}, [currentStudentId]);
 
   useEffect(() => {
     setQuote(inspirationalQuotes[Math.floor(Math.random() * inspirationalQuotes.length)]);
@@ -457,14 +459,16 @@ export default function StudentMilestones() {
   }, [hasAppliedPhaseFromUrl, phaseState, searchParams]);
 
   useEffect(() => {
-    const syncWorkspace = () => setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
+    const syncWorkspace = () => setWorkspace(getInteractiveStudentWorkspace(currentStudentId));
     window.addEventListener(INTERACTIVE_WORKSPACE_EVENT, syncWorkspace);
+    window.addEventListener("storage", syncWorkspace);
     window.addEventListener("focus", syncWorkspace);
     return () => {
       window.removeEventListener(INTERACTIVE_WORKSPACE_EVENT, syncWorkspace);
+      window.removeEventListener("storage", syncWorkspace);
       window.removeEventListener("focus", syncWorkspace);
     };
-  }, []);
+  }, [currentStudentId]);
 
   useEffect(() => {
     if (phaseState.length === 0) return;
@@ -511,7 +515,7 @@ export default function StudentMilestones() {
         }
       }
 
-      saveInteractiveMilestones(nextState);
+      saveInteractiveMilestones(nextState, currentStudentId);
       return nextState;
     });
   };
@@ -532,7 +536,7 @@ export default function StudentMilestones() {
 
     setPhaseState((current) => {
       const nextState = addInteractiveCustomMilestone(current, newTaskPhaseKey, customMilestone);
-      saveInteractiveMilestones(nextState);
+      saveInteractiveMilestones(nextState, currentStudentId);
       return nextState;
     });
 
@@ -785,7 +789,7 @@ export default function StudentMilestones() {
   const handleDeleteTask = (phaseKey: string, milestoneId: string) => {
     setPhaseState((current) => {
       const nextState = deleteInteractiveMilestone(current, phaseKey, milestoneId);
-      saveInteractiveMilestones(nextState);
+      saveInteractiveMilestones(nextState, currentStudentId);
       return nextState;
     });
   };
@@ -793,7 +797,7 @@ export default function StudentMilestones() {
   const handleRestoreDefaultTasks = () => {
     setPhaseState((current) => {
       const nextState = restoreInteractiveDefaultMilestones(current);
-      saveInteractiveMilestones(nextState);
+      saveInteractiveMilestones(nextState, currentStudentId);
       return nextState;
     });
   };
@@ -823,7 +827,7 @@ export default function StudentMilestones() {
 
       setPhaseState((current) => {
         const nextState = attachInteractiveMilestoneFile(current, phaseKey, milestoneId, attachment);
-        saveInteractiveMilestones(nextState);
+        saveInteractiveMilestones(nextState, currentStudentId);
         return nextState;
       });
 
@@ -840,7 +844,7 @@ export default function StudentMilestones() {
   const handleRemoveAttachment = (phaseKey: string, milestoneId: string) => {
     setPhaseState((current) => {
       const nextState = removeInteractiveMilestoneAttachment(current, phaseKey, milestoneId);
-      saveInteractiveMilestones(nextState);
+      saveInteractiveMilestones(nextState, currentStudentId);
       return nextState;
     });
   };

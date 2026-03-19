@@ -19,10 +19,18 @@ import { Input } from "@/components/ui/input";
 import { Users, Sparkles, GraduationCap, Brain, Mail, Send, UserRoundSearch, CheckCircle2 } from "lucide-react";
 import { buildPeerSuggestions } from "@/lib/peerMatching";
 import {
-  DEMO_STUDENT,
+  addInteractivePeerConnection,
+  addInteractivePeerRequest,
+  deleteInteractivePeerRequest,
+  getInteractivePeerConnections,
+  getInteractivePeerRequests,
   getInteractiveStudentWorkspace,
   INTERACTIVE_WORKSPACE_EVENT,
+  replaceInteractivePeerConnections,
+  replaceInteractivePeerRequests,
 } from "@/lib/interactiveMilestones";
+import { useDemoAuth } from "@/lib/demoAuth";
+import { toast } from "@/components/ui/sonner";
 
 const statusLabels: Record<string, string> = {
   suggested: "Suggested",
@@ -49,7 +57,16 @@ function getPrimaryProject(projects: any[], studentId: string) {
   );
 }
 
+const PEER_REQUESTS_SYNC_URL = "/api/demo-peer-requests";
+const PEER_CONNECTIONS_SYNC_URL = "/api/demo-peer-connections";
+
+function getPeerPairKey(studentAId: string, studentBId: string) {
+  return [studentAId, studentBId].sort().join(":");
+}
+
 export default function StudentPeers() {
+  const { session } = useDemoAuth();
+  const currentStudentId = session?.studentId;
   const [selectedPeerId, setSelectedPeerId] = useState<string | null>(null);
   const [emailDraft, setEmailDraft] = useState<{ subject: string; body: string } | null>(null);
   const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
@@ -57,23 +74,98 @@ export default function StudentPeers() {
   const [mentorDialogId, setMentorDialogId] = useState<string | null>(null);
   const [mentorEmailDraft, setMentorEmailDraft] = useState<{ subject: string; body: string } | null>(null);
   const [isGeneratingMentorEmail, setIsGeneratingMentorEmail] = useState(false);
-  const [workspace, setWorkspace] = useState(() => getInteractiveStudentWorkspace(DEMO_STUDENT));
+  const [peerRequests, setPeerRequests] = useState(() => getInteractivePeerRequests(currentStudentId));
+  const [workspace, setWorkspace] = useState(() => getInteractiveStudentWorkspace(currentStudentId));
   const connections = workspace.peerConnections;
   const students = workspace.students;
   const projects = workspace.projects;
   const fields = workspace.fields;
   const mentors = workspace.mockMentors;
 
+  const syncPeerRequestsFromServer = async () => {
+    try {
+      const response = await fetch(PEER_REQUESTS_SYNC_URL, { method: "GET" });
+      if (!response.ok) return;
+      const payload = await response.json();
+      const nextRequests = Array.isArray(payload?.requests) ? payload.requests : [];
+      if (JSON.stringify(nextRequests) !== JSON.stringify(getInteractivePeerRequests())) {
+        replaceInteractivePeerRequests(nextRequests);
+        setPeerRequests(getInteractivePeerRequests(currentStudentId));
+      }
+    } catch {
+      return;
+    }
+  };
+
+  const syncPeerConnectionsFromServer = async () => {
+    try {
+      const response = await fetch(PEER_CONNECTIONS_SYNC_URL, { method: "GET" });
+      if (!response.ok) return;
+      const payload = await response.json();
+      const nextConnections = Array.isArray(payload?.connections) ? payload.connections : [];
+      if (JSON.stringify(nextConnections) !== JSON.stringify(getInteractivePeerConnections())) {
+        replaceInteractivePeerConnections(nextConnections);
+        setWorkspace(getInteractiveStudentWorkspace(currentStudentId));
+      }
+    } catch {
+      return;
+    }
+  };
+
+  const persistPeerRequestsToServer = async (requests: ReturnType<typeof getInteractivePeerRequests>) => {
+    try {
+      await fetch(PEER_REQUESTS_SYNC_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requests }),
+      });
+    } catch {
+      return;
+    }
+  };
+
+  const persistPeerConnectionsToServer = async (
+    connections: ReturnType<typeof getInteractivePeerConnections>,
+  ) => {
+    try {
+      await fetch(PEER_CONNECTIONS_SYNC_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connections }),
+      });
+    } catch {
+      return;
+    }
+  };
+
   useEffect(() => {
-    const syncWorkspace = () => setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
+    const syncWorkspace = () => {
+      setWorkspace(getInteractiveStudentWorkspace(currentStudentId));
+      setPeerRequests(getInteractivePeerRequests(currentStudentId));
+    };
+
+    const syncAllSources = () => {
+      syncWorkspace();
+      void syncPeerRequestsFromServer();
+      void syncPeerConnectionsFromServer();
+    };
+
+    syncAllSources();
     window.addEventListener(INTERACTIVE_WORKSPACE_EVENT, syncWorkspace);
-    window.addEventListener("focus", syncWorkspace);
+    window.addEventListener("storage", syncWorkspace);
+    window.addEventListener("focus", syncAllSources);
+    const pollId = window.setInterval(() => {
+      void syncPeerRequestsFromServer();
+      void syncPeerConnectionsFromServer();
+    }, 1500);
 
     return () => {
       window.removeEventListener(INTERACTIVE_WORKSPACE_EVENT, syncWorkspace);
-      window.removeEventListener("focus", syncWorkspace);
+      window.removeEventListener("storage", syncWorkspace);
+      window.removeEventListener("focus", syncAllSources);
+      window.clearInterval(pollId);
     };
-  }, []);
+  }, [currentStudentId]);
 
   const {
     data: thesisSimilarityByStudentId,
@@ -81,10 +173,10 @@ export default function StudentPeers() {
     isError: isThesisSimilarityError,
     error: thesisSimilarityError,
     status: thesisSimilarityStatus,
-  } = usePeerThesisSimilarity(DEMO_STUDENT, students, projects);
+  } = usePeerThesisSimilarity(currentStudentId || "", students, projects);
 
   const { data: mentorMatchesById, isLoading: isMentorMatchesLoading } = useMentorMatches(
-    DEMO_STUDENT,
+    currentStudentId || "",
     students,
     projects,
     mentors,
@@ -104,10 +196,17 @@ export default function StudentPeers() {
   const getStudent = (id: string) => students?.find((s: any) => s.id === id);
 
   const getPeer = (conn: any) =>
-    getStudent(conn.student_a_id === DEMO_STUDENT ? conn.student_b_id : conn.student_a_id);
+    getStudent(conn.student_a_id === currentStudentId ? conn.student_b_id : conn.student_a_id);
 
-  const currentStudent = getStudent(DEMO_STUDENT);
-  const currentProject = projects ? getPrimaryProject(projects, DEMO_STUDENT) : null;
+  const currentStudent = currentStudentId ? getStudent(currentStudentId) : null;
+  const currentProject = currentStudentId && projects ? getPrimaryProject(projects, currentStudentId) : null;
+  const incomingPeerRequests = peerRequests.filter((request: any) => request.recipient_student_id === currentStudentId);
+  const peerConnectionPairs = new Set(
+    connections.map((connection: any) => getPeerPairKey(connection.student_a_id, connection.student_b_id)),
+  );
+  const pendingPeerRequestPairs = new Set(
+    peerRequests.map((request: any) => getPeerPairKey(request.requester_student_id, request.recipient_student_id)),
+  );
 
   const mentorSuggestions = (mentors || [])
     .map((mentor) => ({
@@ -126,7 +225,7 @@ export default function StudentPeers() {
   const suggestions =
     students && projects && fields
       ? buildPeerSuggestions({
-          currentStudentId: DEMO_STUDENT,
+          currentStudentId: currentStudentId || "",
           students,
           projects,
           fields,
@@ -286,6 +385,75 @@ export default function StudentPeers() {
     setIsGeneratingMentorEmail(false);
   };
 
+  const handleAskToPeer = (peerId: string) => {
+    if (!currentStudentId || !peerId) return;
+
+    const pairKey = getPeerPairKey(currentStudentId, peerId);
+    if (peerConnectionPairs.has(pairKey) || pendingPeerRequestPairs.has(pairKey)) {
+      return;
+    }
+
+    addInteractivePeerRequest({
+      id: `peer-request-${Date.now()}`,
+      requester_student_id: currentStudentId,
+      recipient_student_id: peerId,
+      created_at: new Date().toISOString(),
+      message: currentProject?.title
+        ? `I'd like to connect as peers around "${currentProject.title}".`
+        : "I'd like to connect as peers.",
+    });
+
+    const nextRequests = getInteractivePeerRequests();
+    setPeerRequests(getInteractivePeerRequests(currentStudentId));
+    void persistPeerRequestsToServer(nextRequests);
+    toast("Peer request sent", {
+      description: "The other student will see it in their Peer requests section.",
+    });
+  };
+
+  const handleDeclinePeerRequest = (requestId: string) => {
+    deleteInteractivePeerRequest(requestId);
+    const nextRequests = getInteractivePeerRequests();
+    setPeerRequests(getInteractivePeerRequests(currentStudentId));
+    void persistPeerRequestsToServer(nextRequests);
+  };
+
+  const handleAcceptPeerRequest = (request: (typeof incomingPeerRequests)[number]) => {
+    const requesterId = request.requester_student_id;
+    const recipientId = request.recipient_student_id;
+    const requesterSuggestion = suggestions.find((item) => item.student.id === requesterId);
+    const sharedTopics = requesterSuggestion?.sharedTopics || [];
+    const matchReason =
+      requesterSuggestion?.matchReason ||
+      `Peer connection accepted between ${getStudent(requesterId)?.first_name || "two students"} and ${getStudent(recipientId)?.first_name || "peer"}.`;
+
+    const studentAId = [requesterId, recipientId].sort()[0];
+    const studentBId = [requesterId, recipientId].sort()[1];
+
+    addInteractivePeerConnection({
+      id: `peer-connection-${studentAId}-${studentBId}`,
+      student_a_id: studentAId,
+      student_b_id: studentBId,
+      match_reason: matchReason,
+      shared_topics: sharedTopics,
+      status: "accepted",
+      created_at: new Date().toISOString(),
+    });
+
+    const nextConnections = getInteractivePeerConnections();
+    setWorkspace(getInteractiveStudentWorkspace(currentStudentId));
+    void persistPeerConnectionsToServer(nextConnections);
+
+    deleteInteractivePeerRequest(request.id);
+    const nextRequests = getInteractivePeerRequests();
+    setPeerRequests(getInteractivePeerRequests(currentStudentId));
+    void persistPeerRequestsToServer(nextRequests);
+
+    toast("Peer request accepted", {
+      description: "You are now marked as peers and your documents will be treated as peer documents.",
+    });
+  };
+
   return (
     <div className="space-y-6 max-w-7xl">
       <div>
@@ -382,6 +550,30 @@ export default function StudentPeers() {
                       >
                         <Mail className="h-4 w-4" />
                         Generate outreach email
+                      </Button>
+                      <Button
+                        type="button"
+                        className="w-full"
+                        onClick={() => handleAskToPeer(suggestion.student.id)}
+                        disabled={
+                          peerConnectionPairs.has(
+                            getPeerPairKey(currentStudentId || "", suggestion.student.id),
+                          ) ||
+                          pendingPeerRequestPairs.has(
+                            getPeerPairKey(currentStudentId || "", suggestion.student.id),
+                          )
+                        }
+                      >
+                        <Users className="h-4 w-4" />
+                        {peerConnectionPairs.has(
+                          getPeerPairKey(currentStudentId || "", suggestion.student.id),
+                        )
+                          ? "Already peers"
+                          : pendingPeerRequestPairs.has(
+                                getPeerPairKey(currentStudentId || "", suggestion.student.id),
+                              )
+                            ? "Request pending"
+                            : "Ask to peer"}
                       </Button>
                     </CardContent>
                   </Card>
@@ -577,6 +769,71 @@ export default function StudentPeers() {
           )}
         </section>
       </div>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="ds-title-sm tracking-tight">Peer requests</h2>
+          <p className="ds-body text-muted-foreground mt-1">
+            Requests from other students who want to connect as peers.
+          </p>
+        </div>
+
+        {incomingPeerRequests.length === 0 ? (
+          <Card className="border shadow-none">
+            <CardContent className="pt-6 text-center">
+              <Users className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+              <p className="ds-body text-muted-foreground">No peer requests yet.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-4">
+            {incomingPeerRequests.map((request) => {
+              const requester = getStudent(request.requester_student_id);
+              const requesterProject = getPrimaryProject(projects, request.requester_student_id);
+
+              return (
+                <Card key={request.id} className="border shadow-none">
+                  <CardContent className="pt-6 space-y-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="ds-label">
+                          {requester ? `${requester.first_name} ${requester.last_name}` : "Unknown student"}
+                        </p>
+                        <p className="ds-caption text-muted-foreground mt-1">
+                          {requesterProject?.title || "No active thesis project"}
+                        </p>
+                      </div>
+                      <Badge className="border-0 bg-blue-100 text-blue-800">
+                        Peer request
+                      </Badge>
+                    </div>
+
+                    {request.message ? (
+                      <p className="ds-small text-muted-foreground">{request.message}</p>
+                    ) : null}
+
+                    <div className="flex gap-3 justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => handleDeclinePeerRequest(request.id)}
+                      >
+                        Decline
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => handleAcceptPeerRequest(request)}
+                      >
+                        Accept
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       <Dialog open={Boolean(selectedPeerId)} onOpenChange={(open) => !open && closeEmailDialog()}>
         <DialogContent className="max-w-2xl">

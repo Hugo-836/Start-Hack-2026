@@ -2,17 +2,22 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ArrowRight, BookOpen, Sparkles, Building2, Briefcase, FolderOpen } from "lucide-react";
 import {
-  DEMO_STUDENT,
+  deleteInteractivePeerConnection,
   getInteractivePhaseState,
+  getInteractivePeerConnections,
   getInteractiveProjectDocuments,
   getInteractiveSharedDocumentRequests,
   getInteractiveStudentWorkspace,
   INTERACTIVE_MILESTONES_EVENT,
   INTERACTIVE_WORKSPACE_EVENT,
   phases,
+  replaceInteractivePeerConnections,
 } from "@/lib/interactiveMilestones";
+import { useDemoAuth } from "@/lib/demoAuth";
+import { toast } from "@/components/ui/sonner";
 
 const stateLabels: Record<string, string> = {
   proposed: "Proposed",
@@ -43,12 +48,20 @@ const milestoneStatusLabels: Record<string, string> = {
   overdue: "Overdue",
 };
 
+const PEER_CONNECTIONS_SYNC_URL = "/api/demo-peer-connections";
+
+function getPeerPairKey(studentAId: string, studentBId: string) {
+  return [studentAId, studentBId].sort().join(":");
+}
+
 export default function StudentDashboard() {
+  const { session } = useDemoAuth();
+  const currentStudentId = session?.studentId;
   const [phaseState, setPhaseState] = useState<any[]>(() =>
-    getInteractivePhaseState(),
+    getInteractivePhaseState(currentStudentId),
   );
   const [workspace, setWorkspace] = useState(() =>
-    getInteractiveStudentWorkspace(DEMO_STUDENT),
+    getInteractiveStudentWorkspace(currentStudentId),
   );
   const [monthlyOwlChecks] = useState(() =>
     Array.from({ length: 4 }, () => Math.random() > 0.4),
@@ -56,10 +69,12 @@ export default function StudentDashboard() {
 
   const {
     student,
+    students = [],
     studentProjects,
     supervisors,
     experts = [],
     universities = [],
+    peerConnections = [],
   } = workspace;
 
   const activeProject =
@@ -83,18 +98,19 @@ export default function StudentDashboard() {
       .filter(Boolean) || [];
 
   useEffect(() => {
-    setPhaseState(getInteractivePhaseState());
-    setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
-  }, []);
+    setPhaseState(getInteractivePhaseState(currentStudentId));
+    setWorkspace(getInteractiveStudentWorkspace(currentStudentId));
+  }, [currentStudentId]);
 
   useEffect(() => {
     const syncDashboardProgress = () => {
-      setPhaseState(getInteractivePhaseState());
-      setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
+      setPhaseState(getInteractivePhaseState(currentStudentId));
+      setWorkspace(getInteractiveStudentWorkspace(currentStudentId));
     };
 
     window.addEventListener(INTERACTIVE_MILESTONES_EVENT, syncDashboardProgress);
     window.addEventListener(INTERACTIVE_WORKSPACE_EVENT, syncDashboardProgress);
+    window.addEventListener("storage", syncDashboardProgress);
     window.addEventListener("focus", syncDashboardProgress);
 
     return () => {
@@ -106,9 +122,10 @@ export default function StudentDashboard() {
         INTERACTIVE_WORKSPACE_EVENT,
         syncDashboardProgress,
       );
+      window.removeEventListener("storage", syncDashboardProgress);
       window.removeEventListener("focus", syncDashboardProgress);
     };
-  }, []);
+  }, [currentStudentId]);
 
   const totalMilestones = phaseState.reduce(
     (total, phase) => total + phase.milestones.length,
@@ -171,6 +188,56 @@ export default function StudentDashboard() {
   );
   const openPeerRequests = sharedDocumentRequests.filter((request) => request.student_id !== student?.id);
   const currentMonthLabel = new Date().toLocaleString("en-US", { month: "long" });
+  const acceptedPeers = peerConnections
+    .filter((connection: any) => connection.status === "accepted")
+    .map((connection: any) => {
+      const peerId =
+        connection.student_a_id === currentStudentId
+          ? connection.student_b_id
+          : connection.student_a_id;
+      const peer = students.find((item: any) => item.id === peerId);
+      return peer ? { connection, peer } : null;
+    })
+    .filter(Boolean) as Array<{ connection: any; peer: any }>;
+
+  const persistPeerConnectionsToServer = async (
+    connections: ReturnType<typeof getInteractivePeerConnections>,
+  ) => {
+    try {
+      await fetch(PEER_CONNECTIONS_SYNC_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ connections }),
+      });
+    } catch {
+      return;
+    }
+  };
+
+  const handleUnpeer = (connection: any) => {
+    deleteInteractivePeerConnection(connection.student_a_id, connection.student_b_id);
+    const nextConnections = getInteractivePeerConnections();
+    replaceInteractivePeerConnections(
+      nextConnections.filter(
+        (item) =>
+          getPeerPairKey(item.student_a_id, item.student_b_id) !==
+          getPeerPairKey(connection.student_a_id, connection.student_b_id),
+      ),
+    );
+    void persistPeerConnectionsToServer(
+      getInteractivePeerConnections().filter(
+        (item) =>
+          getPeerPairKey(item.student_a_id, item.student_b_id) !==
+          getPeerPairKey(connection.student_a_id, connection.student_b_id),
+      ),
+    );
+    setWorkspace(getInteractiveStudentWorkspace(currentStudentId));
+    toast("Peer removed", {
+      description: "This student is no longer in your peer network.",
+    });
+  };
 
   return (
     <div className="space-y-8 max-w-6xl">
@@ -463,6 +530,68 @@ export default function StudentDashboard() {
               </Link>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border shadow-none">
+        <CardContent className="pt-6 space-y-4">
+          <div>
+            <h2 className="ds-title-sm tracking-tight">My peers</h2>
+            <p className="ds-body text-muted-foreground mt-1">
+              Students currently connected to you as peers.
+            </p>
+          </div>
+
+          {acceptedPeers.length === 0 ? (
+            <p className="ds-body text-muted-foreground">
+              No peers yet.
+            </p>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {acceptedPeers.map(({ connection, peer }) => (
+                <div key={connection.id} className="rounded-xl border bg-background p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="ds-label">
+                        {peer.first_name} {peer.last_name}
+                      </p>
+                      <p className="ds-caption text-muted-foreground mt-1 capitalize">
+                        {peer.degree}
+                      </p>
+                    </div>
+                    <Badge className="border-0 bg-blue-100 text-blue-800">
+                      Peer
+                    </Badge>
+                  </div>
+
+                  {connection.match_reason ? (
+                    <p className="ds-small text-muted-foreground">{connection.match_reason}</p>
+                  ) : null}
+
+                  {connection.shared_topics?.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {connection.shared_topics.map((topic: string) => (
+                        <Badge key={`${connection.id}-${topic}`} variant="secondary" className="ds-badge">
+                          {topic}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleUnpeer(connection)}
+                    >
+                      Unpeer
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

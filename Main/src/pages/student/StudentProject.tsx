@@ -7,11 +7,11 @@ import { Paperclip, Trash2, Upload } from "lucide-react";
 import {
   addInteractiveProjectDocument,
   deleteInteractiveProjectDocument,
-  DEMO_STUDENT,
   getInteractiveStudentWorkspace,
   INTERACTIVE_WORKSPACE_EVENT,
   type ProjectDocument,
 } from "@/lib/interactiveMilestones";
+import { useDemoAuth } from "@/lib/demoAuth";
 
 const stateLabels: Record<string, string> = { proposed: "Proposed", applied: "Applied", withdrawn: "Withdrawn", rejected: "Rejected", agreed: "Agreed", in_progress: "In Progress", canceled: "Canceled", completed: "Completed" };
 const stateColors: Record<string, string> = { proposed: "bg-muted text-muted-foreground", applied: "bg-blue-100 text-blue-800", agreed: "bg-green-100 text-green-800", in_progress: "bg-purple-100 text-purple-800", completed: "bg-emerald-100 text-emerald-800", rejected: "bg-red-100 text-red-800", withdrawn: "bg-muted text-muted-foreground", canceled: "bg-muted text-muted-foreground" };
@@ -33,7 +33,9 @@ function getResolvedDocumentTitle(document: ProjectDocument, projectTitle?: stri
 }
 
 export default function StudentProject() {
-  const [workspace, setWorkspace] = useState(() => getInteractiveStudentWorkspace(DEMO_STUDENT));
+  const { session } = useDemoAuth();
+  const currentStudentId = session?.studentId;
+  const [workspace, setWorkspace] = useState(() => getInteractiveStudentWorkspace(currentStudentId));
   const [uploadError, setUploadError] = useState<string | null>(null);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const { studentProjects, supervisors, experts, projectDocuments } = workspace;
@@ -43,14 +45,16 @@ export default function StudentProject() {
     projectDocuments.filter((document) => document.project_id === projectId);
 
   useEffect(() => {
-    const syncWorkspace = () => setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
+    const syncWorkspace = () => setWorkspace(getInteractiveStudentWorkspace(currentStudentId));
     window.addEventListener(INTERACTIVE_WORKSPACE_EVENT, syncWorkspace);
+    window.addEventListener("storage", syncWorkspace);
     window.addEventListener("focus", syncWorkspace);
     return () => {
       window.removeEventListener(INTERACTIVE_WORKSPACE_EVENT, syncWorkspace);
+      window.removeEventListener("storage", syncWorkspace);
       window.removeEventListener("focus", syncWorkspace);
     };
-  }, []);
+  }, [currentStudentId]);
 
   const handleProjectFileChange = (projectId: string, file: File | null) => {
     if (!file) return;
@@ -83,7 +87,7 @@ export default function StudentProject() {
 
       addInteractiveProjectDocument(document);
       setUploadError(null);
-      setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
+      setWorkspace(getInteractiveStudentWorkspace(currentStudentId));
       if (inputRefs.current[projectId]) {
         inputRefs.current[projectId]!.value = "";
       }
@@ -155,7 +159,7 @@ export default function StudentProject() {
                         size="icon"
                         onClick={() => {
                           deleteInteractiveProjectDocument(document.id);
-                          setWorkspace(getInteractiveStudentWorkspace(DEMO_STUDENT));
+                          setWorkspace(getInteractiveStudentWorkspace(currentStudentId));
                         }}
                       >
                         <Trash2 className="h-4 w-4" />

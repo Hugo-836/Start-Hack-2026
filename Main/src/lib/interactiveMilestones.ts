@@ -2,11 +2,12 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { mentorExamples } from "../../mock-data/mentors";
 import { seededProjectDocuments } from "../../mock-data/seedProjectDocuments";
+import { getCurrentStudentId } from "./demoAuth";
 
 export const DEMO_STUDENT = "student-26";
-export const INTERACTIVE_MILESTONES_STORAGE_KEY = `studyond-interactive-milestones-${DEMO_STUDENT}`;
+export const INTERACTIVE_MILESTONES_STORAGE_KEY = "studyond-interactive-milestones";
 export const INTERACTIVE_MILESTONES_EVENT = "studyond:interactive-milestones-updated";
-export const INTERACTIVE_WORKSPACE_STORAGE_KEY = `studyond-interactive-workspace-${DEMO_STUDENT}`;
+export const INTERACTIVE_WORKSPACE_STORAGE_KEY = "studyond-interactive-workspace";
 export const INTERACTIVE_WORKSPACE_EVENT = "studyond:interactive-workspace-updated";
 const INTERACTIVE_REMOTE_CACHE_KEY = "studyond-interactive-remote-cache";
 
@@ -92,20 +93,56 @@ export type SharedDocumentRequest = {
   }>;
 };
 
+export type ReceivedSharedDocument = {
+  id: string;
+  request_id: string;
+  recipient_student_id: string;
+  source_document_id: string;
+  source_owner_student_id: string;
+  owner_name: string;
+  project_title: string;
+  name: string;
+  display_title?: string | null;
+  type: string;
+  size: number;
+  dataUrl: string;
+  created_at: string;
+  granted_at: string;
+};
+
+export type PeerRequest = {
+  id: string;
+  requester_student_id: string;
+  recipient_student_id: string;
+  created_at: string;
+  message: string | null;
+};
+
 type WorkspaceState = {
   customFeedbacks: WorkspaceFeedback[];
   projectDocuments: ProjectDocument[];
+  deletedProjectDocumentIds: string[];
   sharedDocumentRequests: SharedDocumentRequest[];
+  receivedSharedDocuments: ReceivedSharedDocument[];
+  peerRequests: PeerRequest[];
+  customPeerConnections: PeerConnectionRow[];
 };
 
 function getAllProjectDocuments(workspaceState: WorkspaceState) {
   const byId = new Map<string, ProjectDocument>();
+  const deletedIds = new Set(workspaceState.deletedProjectDocumentIds);
 
   for (const document of seededProjectDocuments) {
+    if (deletedIds.has(document.id)) {
+      continue;
+    }
     byId.set(document.id, { ...document });
   }
 
   for (const document of workspaceState.projectDocuments) {
+    if (deletedIds.has(document.id)) {
+      continue;
+    }
     byId.set(document.id, document);
   }
 
@@ -113,6 +150,10 @@ function getAllProjectDocuments(workspaceState: WorkspaceState) {
     (left, right) =>
       new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
   );
+}
+
+function getPeerPairKey(studentAId: string, studentBId: string) {
+  return [studentAId, studentBId].sort().join(":");
 }
 
 type RemoteCache = {
@@ -142,6 +183,10 @@ const emptyRemoteCache: RemoteCache = {
 
 let remoteCache: RemoteCache | null = null;
 let remoteLoadPromise: Promise<void> | null = null;
+
+function getStorageStudentId(studentId?: string) {
+  return studentId || getCurrentStudentId() || DEMO_STUDENT;
+}
 
 function getDefaultRemoteCache(): RemoteCache {
   return {
@@ -424,20 +469,23 @@ export function buildPhaseState(milestones: any[] | undefined): PhaseState[] {
   });
 }
 
-export function loadInteractiveMilestones(milestones: any[] | undefined): PhaseState[] {
+export function loadInteractiveMilestones(milestones: any[] | undefined, studentId = DEMO_STUDENT): PhaseState[] {
   const baseState = buildPhaseState(milestones);
 
   if (typeof window === "undefined") {
     return baseState;
   }
 
-  const storedState = window.localStorage.getItem(INTERACTIVE_MILESTONES_STORAGE_KEY);
-  if (!storedState) {
+  const rawState = window.localStorage.getItem(INTERACTIVE_MILESTONES_STORAGE_KEY);
+  if (!rawState) {
     return baseState;
   }
 
   try {
-    const parsedState = JSON.parse(storedState) as PhaseState[];
+    const parsed = JSON.parse(rawState) as Record<string, PhaseState[]> | PhaseState[];
+    const parsedState = Array.isArray(parsed)
+      ? parsed
+      : parsed[getStorageStudentId(studentId)];
     if (!Array.isArray(parsedState)) {
       return baseState;
     }
@@ -493,22 +541,32 @@ export function loadInteractiveMilestones(milestones: any[] | undefined): PhaseS
   }
 }
 
-export function saveInteractiveMilestones(phaseState: PhaseState[]) {
+export function saveInteractiveMilestones(phaseState: PhaseState[], studentId = DEMO_STUDENT) {
   if (typeof window === "undefined") {
     return;
   }
 
-  window.localStorage.setItem(INTERACTIVE_MILESTONES_STORAGE_KEY, JSON.stringify(phaseState));
+  let storedByStudent: Record<string, PhaseState[]> = {};
+  try {
+    const raw = window.localStorage.getItem(INTERACTIVE_MILESTONES_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    storedByStudent = Array.isArray(parsed) ? {} : parsed;
+  } catch {
+    storedByStudent = {};
+  }
+
+  storedByStudent[getStorageStudentId(studentId)] = phaseState;
+  window.localStorage.setItem(INTERACTIVE_MILESTONES_STORAGE_KEY, JSON.stringify(storedByStudent));
   window.dispatchEvent(new CustomEvent(INTERACTIVE_MILESTONES_EVENT));
 }
 
-export function getInteractivePhaseState() {
+export function getInteractivePhaseState(studentId = DEMO_STUDENT) {
   ensureRemoteDataLoaded();
-  const studentId = getPreferredStudentId();
+  const preferredStudentId = getPreferredStudentId(getStorageStudentId(studentId));
   const milestones = getRemoteCache().progressMilestones.filter(
-    (milestone) => milestone.student_id === studentId,
+    (milestone) => milestone.student_id === preferredStudentId,
   );
-  return loadInteractiveMilestones(milestones);
+  return loadInteractiveMilestones(milestones, preferredStudentId);
 }
 
 export function updateInteractiveMilestoneStatus(
@@ -623,9 +681,9 @@ export function removeInteractiveMilestoneAttachment(
   );
 }
 
-export function getInteractiveMilestoneCount(milestones: any[] | undefined) {
+export function getInteractiveMilestoneCount(milestones: any[] | undefined, studentId = DEMO_STUDENT) {
   ensureRemoteDataLoaded();
-  const preferredStudentId = getPreferredStudentId();
+  const preferredStudentId = getPreferredStudentId(getStorageStudentId(studentId));
   const sourceMilestones =
     milestones && milestones.length > 0
       ? milestones
@@ -633,7 +691,7 @@ export function getInteractiveMilestoneCount(milestones: any[] | undefined) {
           (milestone) => milestone.student_id === preferredStudentId,
         );
 
-  return loadInteractiveMilestones(sourceMilestones).reduce(
+  return loadInteractiveMilestones(sourceMilestones, preferredStudentId).reduce(
     (total, phase) => total + phase.milestones.filter((milestone) => milestone.status === "completed").length,
     0,
   );
@@ -641,12 +699,28 @@ export function getInteractiveMilestoneCount(milestones: any[] | undefined) {
 
 export function loadInteractiveWorkspaceState(): WorkspaceState {
   if (typeof window === "undefined") {
-    return { customFeedbacks: [], projectDocuments: [], sharedDocumentRequests: [] };
+    return {
+      customFeedbacks: [],
+      projectDocuments: [],
+      deletedProjectDocumentIds: [],
+      sharedDocumentRequests: [],
+      receivedSharedDocuments: [],
+      peerRequests: [],
+      customPeerConnections: [],
+    };
   }
 
   const rawState = window.localStorage.getItem(INTERACTIVE_WORKSPACE_STORAGE_KEY);
   if (!rawState) {
-    return { customFeedbacks: [], projectDocuments: [], sharedDocumentRequests: [] };
+    return {
+      customFeedbacks: [],
+      projectDocuments: [],
+      deletedProjectDocumentIds: [],
+      sharedDocumentRequests: [],
+      receivedSharedDocuments: [],
+      peerRequests: [],
+      customPeerConnections: [],
+    };
   }
 
   try {
@@ -654,10 +728,22 @@ export function loadInteractiveWorkspaceState(): WorkspaceState {
     return {
       customFeedbacks: Array.isArray(parsedState?.customFeedbacks) ? parsedState.customFeedbacks : [],
       projectDocuments: Array.isArray(parsedState?.projectDocuments) ? parsedState.projectDocuments : [],
+      deletedProjectDocumentIds: Array.isArray(parsedState?.deletedProjectDocumentIds) ? parsedState.deletedProjectDocumentIds : [],
       sharedDocumentRequests: Array.isArray(parsedState?.sharedDocumentRequests) ? parsedState.sharedDocumentRequests : [],
+      receivedSharedDocuments: Array.isArray(parsedState?.receivedSharedDocuments) ? parsedState.receivedSharedDocuments : [],
+      peerRequests: Array.isArray(parsedState?.peerRequests) ? parsedState.peerRequests : [],
+      customPeerConnections: Array.isArray(parsedState?.customPeerConnections) ? parsedState.customPeerConnections : [],
     };
   } catch {
-    return { customFeedbacks: [], projectDocuments: [], sharedDocumentRequests: [] };
+    return {
+      customFeedbacks: [],
+      projectDocuments: [],
+      deletedProjectDocumentIds: [],
+      sharedDocumentRequests: [],
+      receivedSharedDocuments: [],
+      peerRequests: [],
+      customPeerConnections: [],
+    };
   }
 }
 
@@ -750,7 +836,24 @@ export function addInteractiveFeedbackSubmission(feedback: WorkspaceFeedback) {
 export function getInteractivePeerConnections(studentId?: string) {
   ensureRemoteDataLoaded();
   const preferredStudentId = studentId ? getPreferredStudentId(studentId) : undefined;
-  const connections = [...getRemoteCache().peerConnections];
+  const workspaceState = loadInteractiveWorkspaceState();
+  const connectionsByPair = new Map<string, PeerConnectionRow>();
+
+  for (const connection of getRemoteCache().peerConnections) {
+    connectionsByPair.set(
+      getPeerPairKey(connection.student_a_id, connection.student_b_id),
+      connection,
+    );
+  }
+
+  for (const connection of workspaceState.customPeerConnections) {
+    connectionsByPair.set(
+      getPeerPairKey(connection.student_a_id, connection.student_b_id),
+      connection,
+    );
+  }
+
+  const connections = Array.from(connectionsByPair.values());
   return preferredStudentId
     ? connections.filter(
         (connection) =>
@@ -758,6 +861,80 @@ export function getInteractivePeerConnections(studentId?: string) {
           connection.student_b_id === preferredStudentId,
       )
     : connections;
+}
+
+export function getInteractivePeerRequests(studentId?: string) {
+  ensureRemoteDataLoaded();
+  const workspaceState = loadInteractiveWorkspaceState();
+  if (!studentId) {
+    return [...workspaceState.peerRequests];
+  }
+
+  const preferredStudentId = getPreferredStudentId(studentId);
+  return workspaceState.peerRequests.filter(
+    (request) =>
+      request.requester_student_id === preferredStudentId ||
+      request.recipient_student_id === preferredStudentId,
+  );
+}
+
+export function addInteractivePeerRequest(request: PeerRequest) {
+  const workspaceState = loadInteractiveWorkspaceState();
+  saveInteractiveWorkspaceState({
+    ...workspaceState,
+    peerRequests: [request, ...workspaceState.peerRequests.filter((item) => item.id !== request.id)],
+  });
+}
+
+export function deleteInteractivePeerRequest(requestId: string) {
+  const workspaceState = loadInteractiveWorkspaceState();
+  saveInteractiveWorkspaceState({
+    ...workspaceState,
+    peerRequests: workspaceState.peerRequests.filter((item) => item.id !== requestId),
+  });
+}
+
+export function replaceInteractivePeerRequests(requests: PeerRequest[]) {
+  const workspaceState = loadInteractiveWorkspaceState();
+  saveInteractiveWorkspaceState({
+    ...workspaceState,
+    peerRequests: [...requests],
+  });
+}
+
+export function addInteractivePeerConnection(connection: PeerConnectionRow) {
+  const workspaceState = loadInteractiveWorkspaceState();
+  const pairKey = getPeerPairKey(connection.student_a_id, connection.student_b_id);
+  const nextConnections = [
+    ...workspaceState.customPeerConnections.filter(
+      (item) => getPeerPairKey(item.student_a_id, item.student_b_id) !== pairKey,
+    ),
+    connection,
+  ];
+
+  saveInteractiveWorkspaceState({
+    ...workspaceState,
+    customPeerConnections: nextConnections,
+  });
+}
+
+export function replaceInteractivePeerConnections(connections: PeerConnectionRow[]) {
+  const workspaceState = loadInteractiveWorkspaceState();
+  saveInteractiveWorkspaceState({
+    ...workspaceState,
+    customPeerConnections: [...connections],
+  });
+}
+
+export function deleteInteractivePeerConnection(studentAId: string, studentBId: string) {
+  const workspaceState = loadInteractiveWorkspaceState();
+  const pairKey = getPeerPairKey(studentAId, studentBId);
+  saveInteractiveWorkspaceState({
+    ...workspaceState,
+    customPeerConnections: workspaceState.customPeerConnections.filter(
+      (item) => getPeerPairKey(item.student_a_id, item.student_b_id) !== pairKey,
+    ),
+  });
 }
 
 export function getInteractiveMockMentors() {
@@ -884,11 +1061,71 @@ export function deleteInteractiveSharedDocumentRequest(requestId: string) {
   });
 }
 
+export function replaceInteractiveSharedDocumentRequests(requests: SharedDocumentRequest[]) {
+  const workspaceState = loadInteractiveWorkspaceState();
+  saveInteractiveWorkspaceState({
+    ...workspaceState,
+    sharedDocumentRequests: [...requests],
+  });
+}
+
+export function getInteractiveReceivedSharedDocuments(studentId?: string) {
+  ensureRemoteDataLoaded();
+  const workspaceState = loadInteractiveWorkspaceState();
+  if (!studentId) {
+    return [...workspaceState.receivedSharedDocuments];
+  }
+
+  const preferredStudentId = getPreferredStudentId(studentId);
+  return workspaceState.receivedSharedDocuments.filter(
+    (item) => item.recipient_student_id === preferredStudentId,
+  );
+}
+
+export function addInteractiveReceivedSharedDocument(document: ReceivedSharedDocument) {
+  const workspaceState = loadInteractiveWorkspaceState();
+  const existingIndex = workspaceState.receivedSharedDocuments.findIndex(
+    (item) => item.id === document.id,
+  );
+
+  if (existingIndex !== -1) {
+    const nextDocuments = [...workspaceState.receivedSharedDocuments];
+    nextDocuments[existingIndex] = document;
+    saveInteractiveWorkspaceState({
+      ...workspaceState,
+      receivedSharedDocuments: nextDocuments,
+    });
+    return;
+  }
+
+  saveInteractiveWorkspaceState({
+    ...workspaceState,
+    receivedSharedDocuments: [document, ...workspaceState.receivedSharedDocuments],
+  });
+}
+
+export function replaceInteractiveReceivedSharedDocuments(documents: ReceivedSharedDocument[]) {
+  const workspaceState = loadInteractiveWorkspaceState();
+  saveInteractiveWorkspaceState({
+    ...workspaceState,
+    receivedSharedDocuments: [...documents],
+  });
+}
+
+export function deleteInteractiveReceivedSharedDocument(documentId: string) {
+  const workspaceState = loadInteractiveWorkspaceState();
+  saveInteractiveWorkspaceState({
+    ...workspaceState,
+    receivedSharedDocuments: workspaceState.receivedSharedDocuments.filter((item) => item.id !== documentId),
+  });
+}
+
 export function addInteractiveProjectDocument(document: ProjectDocument) {
   const workspaceState = loadInteractiveWorkspaceState();
   saveInteractiveWorkspaceState({
     ...workspaceState,
-    projectDocuments: [document, ...workspaceState.projectDocuments],
+      projectDocuments: [document, ...workspaceState.projectDocuments],
+      deletedProjectDocumentIds: workspaceState.deletedProjectDocumentIds.filter((item) => item !== document.id),
   });
 }
 
@@ -897,6 +1134,7 @@ export function deleteInteractiveProjectDocument(documentId: string) {
   saveInteractiveWorkspaceState({
     ...workspaceState,
     projectDocuments: workspaceState.projectDocuments.filter((item) => item.id !== documentId),
+    deletedProjectDocumentIds: Array.from(new Set([...workspaceState.deletedProjectDocumentIds, documentId])),
   });
 }
 
