@@ -728,9 +728,7 @@ export default function StudentSharedDocuments() {
                 {isAssistantLoading ? "Searching..." : "AI Search"}
               </Button>
             </div>
-            <p className="ds-caption text-muted-foreground">
-              Claude searches behind this bar across your own documents, peer documents, and suggested web directions.
-            </p>
+
           </div>
 
           {assistantResult && (
@@ -1077,7 +1075,7 @@ export default function StudentSharedDocuments() {
               <div>
                 <h2 className="ds-title-cards">Documents you could share</h2>
                 <p className="ds-small text-muted-foreground mt-1">
-                  Claude looks through your project documents and suggests which ones could help students who posted a request.
+                  Help your peers finding documents.
                 </p>
               </div>
             </div>
