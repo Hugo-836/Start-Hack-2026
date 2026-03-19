@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, BookOpen, Sparkles, Building2, Briefcase, FolderOpen } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { ArrowRight, BookOpen, Sparkles, Building2, Briefcase, FolderOpen, Send } from "lucide-react";
 import {
+  addInteractiveFeedbackSubmission,
   deleteInteractivePeerConnection,
   getInteractivePhaseState,
   getInteractivePeerConnections,
@@ -47,6 +49,12 @@ const milestoneStatusLabels: Record<string, string> = {
   completed: "Completed",
   overdue: "Overdue",
 };
+const MAX_WEEKLY_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+
+type DashboardChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
 
 const PEER_CONNECTIONS_SYNC_URL = "/api/demo-peer-connections";
 
@@ -63,9 +71,19 @@ export default function StudentDashboard() {
   const [workspace, setWorkspace] = useState(() =>
     getInteractiveStudentWorkspace(currentStudentId),
   );
-  const [monthlyOwlChecks] = useState(() =>
-    Array.from({ length: 4 }, () => Math.random() > 0.4),
-  );
+  const [monthlyOwlChecks, setMonthlyOwlChecks] = useState(() => [
+    ...Array.from({ length: 3 }, () => Math.random() > 0.4),
+    false,
+  ]);
+  const [dashboardChatInput, setDashboardChatInput] = useState("");
+  const [dashboardChatMessages, setDashboardChatMessages] = useState<DashboardChatMessage[]>([
+    {
+      role: "assistant",
+      content: "Ask me any general question about your thesis progress, project direction, feedback, or shared documents.",
+    },
+  ]);
+  const [isDashboardChatLoading, setIsDashboardChatLoading] = useState(false);
+  const weeklyUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const {
     student,
@@ -171,13 +189,6 @@ export default function StudentDashboard() {
     pendingMilestones.find((milestone: any) => milestone.status === "upcoming") ||
     null;
 
-  const aiSuggestionText =
-    totalMilestones === 0
-      ? "You don't have any milestones yet. Create a progress plan to structure your thesis journey."
-      : nextMilestone
-        ? `Your next focus should be "${nextMilestone.title}". Keep your milestone page updated so your dashboard stays in sync.`
-        : "All current milestones are completed. You can add new ones to keep structuring the next phase of your thesis.";
-
   const allSharedDocuments = getInteractiveProjectDocuments();
   const sharedDocumentRequests = getInteractiveSharedDocumentRequests();
   const mySharedDocuments = allSharedDocuments.filter((document) =>
@@ -239,6 +250,142 @@ export default function StudentDashboard() {
     });
   };
 
+  const handleDashboardChatSend = async () => {
+    const prompt = dashboardChatInput.trim();
+    if (!prompt) return;
+
+    const nextMessages = [
+      ...dashboardChatMessages,
+      { role: "user", content: prompt } as DashboardChatMessage,
+    ];
+
+    setDashboardChatMessages(nextMessages);
+    setDashboardChatInput("");
+
+    try {
+      setIsDashboardChatLoading(true);
+      const response = await fetch("/api/dashboard-ai-chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          context: {
+            student: student
+              ? {
+                  first_name: student.first_name,
+                  last_name: student.last_name,
+                  degree: student.degree,
+                  about: student.about,
+                }
+              : null,
+            activeProject: activeProject
+              ? {
+                  title: activeProject.title,
+                  description: activeProject.description,
+                  state: activeProject.state,
+                }
+              : null,
+            nextMilestone: nextMilestone
+              ? {
+                  title: nextMilestone.title,
+                  description: nextMilestone.description,
+                  phaseLabel: nextMilestone.phaseLabel,
+                  status: nextMilestone.status,
+                }
+              : null,
+            sharedDocuments: {
+              mine: mySharedDocuments.length,
+              peers: peerSharedDocuments.length,
+              requests: openPeerRequests.length,
+            },
+          },
+          messages: nextMessages,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Dashboard AI chat failed with status ${response.status}`);
+      }
+
+      const data = (await response.json()) as { reply?: string };
+      const reply = data.reply?.trim() || "I could not answer that clearly right now.";
+
+      setDashboardChatMessages((current) => [
+        ...current,
+        { role: "assistant", content: reply },
+      ]);
+    } catch {
+      setDashboardChatMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content:
+            "I could not respond right now. Try asking about your next milestone, your project direction, or your shared documents.",
+        },
+      ]);
+    } finally {
+      setIsDashboardChatLoading(false);
+    }
+  };
+
+  const handleWeeklyFileChange = (file: File | null) => {
+    if (!file) return;
+
+    if (file.size > MAX_WEEKLY_FILE_SIZE_BYTES) {
+      toast("File too large", {
+        description: "Please choose a file smaller than 5 MB.",
+      });
+      if (weeklyUploadInputRef.current) {
+        weeklyUploadInputRef.current.value = "";
+      }
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      if (!result) {
+        toast("Upload failed", {
+          description: "This file could not be added.",
+        });
+        return;
+      }
+
+      addInteractiveFeedbackSubmission({
+        id: `feedback-weekly-${Date.now()}`,
+        student_id: currentStudentId || "",
+        title: "Weekly report",
+        submission_text: `Weekly report submitted on ${new Date().toLocaleDateString("en-US")}.`,
+        file_name: file.name,
+        reviewer_feedback: null,
+        ai_summary: null,
+        status: "submitted",
+        reviewer_id: workspace.supervisors[0]?.id || null,
+        reviewer_type: "supervisor",
+      });
+      setMonthlyOwlChecks((current) =>
+        current.map((value, index) => (index === current.length - 1 ? true : value)),
+      );
+      setWorkspace(getInteractiveStudentWorkspace(currentStudentId));
+      toast("Weekly submission recorded", {
+        description: `"${file.name}" was submitted to Feedback as "Weekly report".`,
+      });
+
+      if (weeklyUploadInputRef.current) {
+        weeklyUploadInputRef.current.value = "";
+      }
+    };
+
+    reader.onerror = () => {
+      toast("Upload failed", {
+        description: "This file could not be added.",
+      });
+    };
+
+    reader.readAsDataURL(file);
+  };
+
   return (
     <div className="space-y-8 max-w-6xl">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -252,9 +399,22 @@ export default function StudentDashboard() {
         </div>
 
         <div className="inline-flex items-center gap-3 rounded-2xl border bg-secondary px-4 py-2 shrink-0">
+          <input
+            ref={weeklyUploadInputRef}
+            type="file"
+            className="hidden"
+            onChange={(event) => handleWeeklyFileChange(event.target.files?.[0] || null)}
+          />
           <div>
             <p className="ds-caption text-muted-foreground">Current month</p>
             <p className="ds-label">{currentMonthLabel}</p>
+            <button
+              type="button"
+              className="ds-caption mt-1 text-foreground underline-offset-2 hover:underline"
+              onClick={() => weeklyUploadInputRef.current?.click()}
+            >
+              Submit weekly report
+            </button>
           </div>
           <div className="flex items-center gap-2">
             {monthlyOwlChecks.map((didSubmit, index) => (
@@ -263,9 +423,13 @@ export default function StudentDashboard() {
                 className={`flex h-9 w-9 items-center justify-center rounded-full border text-sm ${
                   didSubmit
                     ? "border-emerald-200 bg-emerald-100"
-                    : "border-border bg-background text-muted-foreground"
+                    : index === monthlyOwlChecks.length - 1
+                      ? "border-amber-200 bg-amber-50 text-amber-700"
+                      : "border-border bg-background text-muted-foreground"
                 }`}
-                aria-label={`Week ${index + 1}: ${didSubmit ? "submitted" : "missed"}`}
+                aria-label={`Week ${index + 1}: ${
+                  didSubmit ? "submitted" : index === monthlyOwlChecks.length - 1 ? "current week pending" : "missed"
+                }`}
               >
                 <span className={didSubmit ? "text-xl leading-none" : "text-base leading-none"} aria-hidden="true">
                   {didSubmit ? "🦉" : "✕"}
@@ -511,23 +675,43 @@ export default function StudentDashboard() {
       </div>
 
       <Card className="border border-ai shadow-none">
-        <CardContent className="pt-6">
+        <CardContent className="pt-5">
           <div className="flex items-start gap-4">
             <div className="rounded-full bg-ai p-2 shrink-0">
               <Sparkles className="h-4 w-4 text-white" />
             </div>
 
-            <div>
-              <p className="ds-label text-ai">AI Suggestion</p>
-              <p className="ds-body text-muted-foreground mt-2">{aiSuggestionText}</p>
+            <div className="min-w-0 flex-1">
+              <p className="ds-label text-ai">AI Chat</p>
+              <div className="mt-2 max-h-[180px] space-y-2 overflow-y-auto rounded-xl border border-ai/20 bg-ai/5 p-3">
+                {dashboardChatMessages.map((message, index) => (
+                  <div
+                    key={`${message.role}-${index}`}
+                    className={`rounded-xl px-3 py-2 text-sm ${
+                      message.role === "assistant"
+                        ? "bg-background text-foreground"
+                        : "ml-auto max-w-[85%] bg-ai text-white"
+                    }`}
+                  >
+                    {message.content}
+                  </div>
+                ))}
+              </div>
 
-              <Link
-                to="/student/milestones"
-                className="inline-flex items-center gap-1 mt-5 ds-label text-foreground hover:underline"
-              >
-                {totalMilestones === 0 ? "Create milestones" : "Open milestones"}
-                <ArrowRight className="h-3 w-3" />
-              </Link>
+              <div className="mt-2 space-y-2">
+                <Textarea
+                  rows={2}
+                  value={dashboardChatInput}
+                  onChange={(event) => setDashboardChatInput(event.target.value)}
+                  placeholder="Example: What should I focus on this week?"
+                />
+                <div className="flex justify-end">
+                  <Button onClick={handleDashboardChatSend} disabled={!dashboardChatInput.trim() || isDashboardChatLoading}>
+                    <Send className="h-4 w-4" />
+                    {isDashboardChatLoading ? "Thinking..." : "Ask AI"}
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         </CardContent>

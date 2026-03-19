@@ -12,6 +12,7 @@ import { generateTaskAssistantReply } from "./server/taskAssistant";
 import { matchSharedDocumentsWithClaude } from "./server/sharedDocumentMatcher";
 import { discoverDocumentsWithClaude } from "./server/documentDiscoveryAssistant";
 import { generateAiFeedback } from "./server/aiFeedback";
+import { generateDashboardAssistantReply } from "./server/dashboardAssistant";
 
 function readBody(req: NodeJS.ReadableStream) {
   return new Promise<string>((resolve, reject) => {
@@ -318,6 +319,27 @@ export default defineConfig(({ mode }) => {
               res.statusCode = 200;
               res.setHeader("Content-Type", "application/json");
               res.end(JSON.stringify(result));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "Unknown error";
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: message }));
+            }
+          });
+          server.middlewares.use("/api/dashboard-ai-chat", async (req: any, res: any, next: any) => {
+            if (req.method !== "POST") return next();
+
+            try {
+              const rawBody = await readBody(req);
+              const body = JSON.parse(rawBody);
+              const reply = await generateDashboardAssistantReply(body, {
+                apiKey: env.ANTHROPIC_API_KEY,
+                model: env.ANTHROPIC_MODEL || env.CLAUDE_MODEL || "claude-sonnet-4-20250514",
+              });
+
+              res.statusCode = 200;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify(reply));
             } catch (error) {
               const message = error instanceof Error ? error.message : "Unknown error";
               res.statusCode = 500;
