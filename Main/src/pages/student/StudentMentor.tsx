@@ -1,27 +1,176 @@
-import { usePeerConnections, useStudents } from "@/hooks/useStudyondData";
+// src/components/StudentMentors.tsx
+import { useThesisProjects, useSupervisors, useExperts } from "@/hooks/useStudyondData";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Users, Sparkles } from "lucide-react";
+import { Users, GraduationCap, Briefcase } from "lucide-react";
 
 const DEMO_STUDENT = "student-03";
-const statusLabels: Record<string, string> = { suggested: "Suggested", accepted: "Accepted", declined: "Declined" };
-const statusColors: Record<string, string> = { suggested: "bg-blue-100 text-blue-800", accepted: "bg-emerald-100 text-emerald-800", declined: "bg-muted text-muted-foreground" };
 
-export default function StudentPeers() {
-  const { data: connections, isLoading } = usePeerConnections(DEMO_STUDENT);
-  const { data: students } = useStudents();
-  const getStudent = (id: string) => students?.find((s: any) => s.id === id);
-  const getPeer = (conn: any) => getStudent(conn.student_a_id === DEMO_STUDENT ? conn.student_b_id : conn.student_a_id);
+type MentorItem = {
+  id: string;
+  type: "supervisor" | "expert";
+  first_name?: string;
+  last_name?: string;
+  title?: string;
+  email?: string;
+  relatedProjects: string[];
+};
+
+export default function StudentMentors() {
+  const { data: projects, isLoading: projectsLoading, error: projectsError } = useThesisProjects();
+  const { data: supervisors, isLoading: supervisorsLoading, error: supervisorsError } = useSupervisors();
+  const { data: experts, isLoading: expertsLoading, error: expertsError } = useExperts();
+
+  const isLoading = projectsLoading || supervisorsLoading || expertsLoading;
+  const error = projectsError || supervisorsError || expertsError;
+
+  const studentProjects = (projects ?? []).filter(
+    (project: any) => project.student_id === DEMO_STUDENT
+  );
+
+  const mentorsMap = new Map<string, MentorItem>();
+
+  for (const project of studentProjects) {
+    for (const supervisorId of project.supervisor_ids ?? []) {
+      const supervisor = supervisors?.find((s: any) => s.id === supervisorId);
+      if (!supervisor) continue;
+
+      const key = `supervisor-${supervisor.id}`;
+      const existing = mentorsMap.get(key);
+
+      if (existing) {
+        existing.relatedProjects.push(project.title ?? "Untitled project");
+      } else {
+        mentorsMap.set(key, {
+          id: supervisor.id,
+          type: "supervisor",
+          first_name: supervisor.first_name,
+          last_name: supervisor.last_name,
+          title: supervisor.title,
+          email: supervisor.email,
+          relatedProjects: [project.title ?? "Untitled project"],
+        });
+      }
+    }
+
+    for (const expertId of project.expert_ids ?? []) {
+      const expert = experts?.find((e: any) => e.id === expertId);
+      if (!expert) continue;
+
+      const key = `expert-${expert.id}`;
+      const existing = mentorsMap.get(key);
+
+      if (existing) {
+        existing.relatedProjects.push(project.title ?? "Untitled project");
+      } else {
+        mentorsMap.set(key, {
+          id: expert.id,
+          type: "expert",
+          first_name: expert.first_name,
+          last_name: expert.last_name,
+          title: expert.title,
+          email: expert.email,
+          relatedProjects: [project.title ?? "Untitled project"],
+        });
+      }
+    }
+  }
+
+  const mentors = Array.from(mentorsMap.values());
+
+  const getInitials = (firstName?: string, lastName?: string) =>
+    `${firstName?.[0] ?? "?"}${lastName?.[0] ?? "?"}`;
+
+  if (isLoading) {
+    return <p className="text-muted-foreground">Loading...</p>;
+  }
+
+  if (error) {
+    return <p className="text-red-600">Error while loading mentors.</p>;
+  }
 
   return (
     <div className="space-y-6 max-w-4xl">
-      <div><h1 className="ds-title-lg tracking-tight">Peers</h1><p className="ds-body text-muted-foreground mt-1">Connect with students working on similar topics.</p></div>
-      {isLoading ? <p className="text-muted-foreground">Loading...</p> : !connections?.length ? (
-        <Card className="border shadow-none"><CardContent className="pt-6 text-center"><Users className="h-10 w-10 mx-auto text-muted-foreground mb-3" /><p className="ds-body text-muted-foreground">No peer connections yet.</p><div className="mt-4 p-4 rounded-lg border border-ai inline-block"><div className="flex items-center gap-2 text-ai"><Sparkles className="h-4 w-4" /><span className="ds-label">AI matching coming soon</span></div><p className="ds-small text-muted-foreground mt-1">AI will analyze thesis topics to suggest relevant connections.</p></div></CardContent></Card>
+      <div>
+        <h1 className="ds-title-lg tracking-tight">Mentors</h1>
+        <p className="ds-body text-muted-foreground mt-1">
+          Meet the supervisors and experts linked to your thesis projects.
+        </p>
+      </div>
+
+      {mentors.length === 0 ? (
+        <Card className="border shadow-none">
+          <CardContent className="pt-6 text-center">
+            <Users className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+            <p className="ds-body text-muted-foreground">
+              No mentors found for this student yet.
+            </p>
+          </CardContent>
+        </Card>
       ) : (
-        <div className="grid-3-col">{connections.map((conn: any) => { const peer = getPeer(conn); if (!peer) return null; return (
-          <Card key={conn.id} className="border shadow-none hover:shadow-md transition-shadow duration-300"><CardContent className="pt-6 space-y-3"><div className="flex items-center gap-3"><div className="h-10 w-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center ds-label">{peer.first_name[0]}{peer.last_name[0]}</div><div><p className="ds-label">{peer.first_name} {peer.last_name}</p><p className="ds-caption text-muted-foreground capitalize">{peer.degree}</p></div></div>{conn.match_reason && <p className="ds-small text-muted-foreground">{conn.match_reason}</p>}{conn.shared_topics?.length > 0 && <div className="flex flex-wrap gap-1.5">{conn.shared_topics.map((t: string) => <Badge key={t} variant="secondary" className="ds-badge">{t}</Badge>)}</div>}<Badge className={`${statusColors[conn.status]} border-0`}>{statusLabels[conn.status]}</Badge></CardContent></Card>
-        ); })}</div>
+        <div className="grid-3-col">
+          {mentors.map((mentor) => (
+            <Card
+              key={`${mentor.type}-${mentor.id}`}
+              className="border shadow-none hover:shadow-md transition-shadow duration-300"
+            >
+              <CardContent className="pt-6 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center ds-label">
+                    {getInitials(mentor.first_name, mentor.last_name)}
+                  </div>
+
+                  <div>
+                    <p className="ds-label">
+                      {mentor.title ? `${mentor.title} ` : ""}
+                      {mentor.first_name ?? ""} {mentor.last_name ?? ""}
+                    </p>
+                    <p className="ds-caption text-muted-foreground">
+                      {mentor.email ?? "No email"}
+                    </p>
+                  </div>
+                </div>
+
+                <Badge
+                  className={`border-0 ${
+                    mentor.type === "supervisor"
+                      ? "bg-blue-100 text-blue-800"
+                      : "bg-emerald-100 text-emerald-800"
+                  }`}
+                >
+                  {mentor.type === "supervisor" ? (
+                    <span className="flex items-center gap-1">
+                      <GraduationCap className="h-3.5 w-3.5" />
+                      Supervisor
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1">
+                      <Briefcase className="h-3.5 w-3.5" />
+                      Expert
+                    </span>
+                  )}
+                </Badge>
+
+                <div>
+                  <p className="ds-small text-muted-foreground mb-2">
+                    Related projects
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {mentor.relatedProjects.map((projectTitle, index) => (
+                      <Badge
+                        key={`${mentor.id}-${index}`}
+                        variant="secondary"
+                        className="ds-badge"
+                      >
+                        {projectTitle}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   );
