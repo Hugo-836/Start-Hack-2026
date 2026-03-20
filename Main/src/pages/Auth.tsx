@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -41,11 +41,6 @@ export default function AuthPage() {
     };
   }, []);
 
-  const suggestedEmails = useMemo(
-    () => students.slice(0, 6).map((student) => student.email),
-    [students],
-  );
-
   if (session) {
     return <Navigate to="/student" replace />;
   }
@@ -62,7 +57,7 @@ export default function AuthPage() {
     );
 
     if (!matchedStudent) {
-      setError("Use one of the student emails from the demo dataset.");
+      setError("No student account found for this email.");
       return;
     }
 
@@ -74,88 +69,54 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-screen bg-background px-6 py-10">
-      <div className="mx-auto flex min-h-[80vh] max-w-5xl items-center justify-center">
-        <div className="grid w-full gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="space-y-6">
-            <img src="/studyond.svg" alt="Studyond" className="h-10" />
-            <div>
-              <h1 className="ds-title-lg tracking-tight">Student Demo Login</h1>
-              <p className="ds-body mt-2 text-muted-foreground">
-                Enter a student email and any code to open an independent session in this window.
-              </p>
-            </div>
-
-            <Card className="border shadow-none">
-              <CardContent className="space-y-4 pt-6">
-                <div className="space-y-2">
-                  <Label htmlFor="demo-email">Email</Label>
-                  <Input
-                    id="demo-email"
-                    value={email}
-                    onChange={(event) => {
-                      setEmail(event.target.value);
-                      setError(null);
-                    }}
-                    placeholder="student@example.com"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="demo-code">Code</Label>
-                  <Input
-                    id="demo-code"
-                    value={code}
-                    onChange={(event) => setCode(event.target.value)}
-                    placeholder="Any code works"
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        handleLogin();
-                      }
-                    }}
-                  />
-                </div>
-
-                {error ? <p className="text-sm text-red-600">{error}</p> : null}
-
-                <Button onClick={handleLogin} disabled={loading || !email.trim()}>
-                  {loading ? "Loading students..." : "Enter demo"}
-                </Button>
-              </CardContent>
-            </Card>
+      <div className="mx-auto flex min-h-[80vh] max-w-xl items-center justify-center">
+        <div className="w-full space-y-6">
+          <img src="/studyond.svg" alt="Studyond" className="h-10" />
+          <div>
+            <h1 className="ds-title-lg tracking-tight">Sign in</h1>
+            <p className="ds-body mt-2 text-muted-foreground">
+              Access your Studyond workspace with your student email and password.
+            </p>
           </div>
 
           <Card className="border shadow-none">
             <CardContent className="space-y-4 pt-6">
-              <div>
-                <p className="ds-label">How to test two students</p>
-                <p className="ds-small mt-1 text-muted-foreground">
-                  Open a second browser window, log in with another student email, and both sessions will share document requests and other interactive data.
-                </p>
+              <div className="space-y-2">
+                <Label htmlFor="student-email">Email</Label>
+                <Input
+                  id="student-email"
+                  type="email"
+                  value={email}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    setError(null);
+                  }}
+                  placeholder="name@university.edu"
+                />
               </div>
 
               <div className="space-y-2">
-                <p className="ds-label">Demo student emails</p>
-                {loading ? (
-                  <p className="ds-small text-muted-foreground">Loading demo accounts...</p>
-                ) : (
-                  <div className="space-y-2">
-                    {suggestedEmails.map((suggestedEmail) => (
-                      <button
-                        key={suggestedEmail}
-                        type="button"
-                        className="block w-full rounded-lg border bg-background px-3 py-2 text-left text-sm hover:bg-secondary/30"
-                        onClick={() => {
-                          setEmail(suggestedEmail);
-                          setError(null);
-                        }}
-                      >
-                        {suggestedEmail}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <Label htmlFor="student-password">Password</Label>
+                <Input
+                  id="student-password"
+                  type="password"
+                  value={code}
+                  onChange={(event) => setCode(event.target.value)}
+                  placeholder="Enter your password"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      handleLogin();
+                    }
+                  }}
+                />
               </div>
+
+              {error ? <p className="text-sm text-red-600">{error}</p> : null}
+
+              <Button onClick={handleLogin} disabled={loading || !email.trim()} className="w-full">
+                {loading ? "Loading account access..." : "Sign in"}
+              </Button>
             </CardContent>
           </Card>
         </div>

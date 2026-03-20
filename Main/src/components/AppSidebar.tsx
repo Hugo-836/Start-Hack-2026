@@ -35,7 +35,7 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarContent>
         <div className="p-4">
-          <Link to="/"><img src="/studyond.svg" alt="Studyond" className={collapsed ? "h-6 w-6" : "h-8"} /></Link>
+          <Link to="/"><img src="/studyond.svg" alt="Studyond" className={collapsed ? "h-8 w-8" : "h-12"} /></Link>
         </div>
 
         <SidebarGroup>
