@@ -34,8 +34,14 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarContent>
-        <div className="p-4">
-          <Link to="/"><img src="/studyond.svg" alt="Studyond" className={collapsed ? "h-8 w-8" : "h-12"} /></Link>
+        <div className={`p-4 ${collapsed ? "flex justify-center" : ""}`}>
+          <Link to="/" className="block">
+            <img
+              src="/studyond.svg"
+              alt="Studyond"
+              className={collapsed ? "block h-8 w-auto max-w-none" : "block h-12 w-auto max-w-full"}
+            />
+          </Link>
         </div>
 
         <SidebarGroup>
